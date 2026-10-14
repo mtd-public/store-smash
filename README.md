@@ -13,6 +13,9 @@ python3 -m http.server 8080
 Open `http://localhost:8080`. No build step: three.js r160 is vendored and loaded through an import map, as in
 Dr. Mow.
 
+**Live:** https://mtd-public.github.io/store-smash/ — every push runs the headless proof
+(`.github/workflows/deploy.yml`); pushes to `main` deploy to GitHub Pages once it passes.
+
 ## How a shift plays
 
 1. **Order board.** A handful of orders (2–4 items each, from different departments, each with its own drop-off
