@@ -3,9 +3,9 @@
 //   BOARD  the store opens with a fresh layout (departments shuffled between its aisles, floors and the outdoor
 //          yard) and a board of orders. Each dasher stacks up to three; several dashers can chase the same one.
 //   SHOP   on foot with a cart. Roll past a shelf slot holding something your orders need to grab it. Your list
-//          tells you the department, not the aisle. Barge a rival with a RUSH or swing a PUNCH: a punch on someone
-//          carrying an item you still need steals it into your cart; otherwise items spill on the floor for
-//          anyone who needs them. A car hitting a shopper spills a cart too.
+//          tells you the department, not the aisle. SMASH a rival (a lunge with the cart): if they carry an item
+//          you still need it lands in your cart; otherwise their items spill on the floor for anyone who needs
+//          them. A car hitting a shopper spills a cart too.
 //   CAR    with at least one order complete, touch your own car (outdoor lot, indoor garage, or the garage roof
 //          over the skybridge) to jump in. Orders you hadn't finished go back on the board; your cart stays
 //          behind — a prop anyone can smash.
@@ -16,7 +16,7 @@
 // Every body steps through js/drive.js; dashers differ only by where their controls come from (keys / pad /
 // touch for humans, js/ai.js for CPUs — a remote player would be one more control source).
 import { createBody, driveStep, bumpBodies, circles, turnTo, penAt } from './drive.js';
-import { HANDLING, MATCH, COMBAT, SLOWMO, DT } from './tuning.js';
+import { HANDLING, MATCH, COMBAT, SLOWMO, CPU, DT } from './tuning.js';
 import { makeOrders, PRODUCT } from './order.js';
 import { groundAt, wallAt } from './world.js';
 import { mulberry32, shuffle } from './utils.js';
@@ -48,7 +48,7 @@ export function createMatch(L, W, { seed = (Math.random() * 2 ** 31) >>> 0, huma
       cart: createBody(HANDLING.cart, s.x, s.y, s.z, s.heading),
       car: createBody(HANDLING.car, c.x, c.y, c.z, c.heading),
       earned: 0, delivered: 0, poached: 0, enterT: null, lastT: null,
-      stunT: 0, guardT: 0, rushT: 0, rushCD: 0, punchCD: 0, punchT: 0, hunting: -1, style: SLOWMO.START, tricks: 0,
+      stunT: 0, guardT: 0, smashT: 0, smashCD: 0, smashHit: false, hunting: -1, style: SLOWMO.START, tricks: 0,
     });
   }
   return { L, W, seed, O, board: O.board, dashers, props: [], loose: [], rng, phase: humans ? 'board' : 'ready', boardT: MATCH.BOARD_TIME, t: 0, readyT: MATCH.READY, winner: null, events: [], steps: 0 };
@@ -91,7 +91,7 @@ export function release(M, d, oi) {
 export const toggle = (M, d, oi) => (d.orders.includes(oi) ? release(M, d, oi) : accept(M, d, oi));
 export const openOrders = (M) => M.board.filter((o) => o.status === 'open');
 
-// One fixed step (DT) of the whole match. ctls[i]: dasher i's controls (js/drive.js format + rush / punch) or null.
+// One fixed step (DT) of the whole match. ctls[i]: dasher i's controls (js/drive.js format + smash) or null.
 export function matchStep(M, ctls) {
   const ev = M.events;
   M.steps++;
@@ -124,21 +124,24 @@ function end(M, why) {
 
 function dasherStep(M, d, ctl, ev) {
   const L = M.L, W = M.W;
-  for (const k of ['stunT', 'guardT', 'rushT', 'rushCD', 'punchCD', 'punchT']) if (d[k] > 0) d[k] = Math.max(0, d[k] - DT);
+  const wasSmash = d.smashT > 0;
+  for (const k of ['stunT', 'guardT', 'smashT', 'smashCD']) if (d[k] > 0) d[k] = Math.max(0, d[k] - DT);
+  if (wasSmash && d.smashT <= 0 && !d.smashHit) ev.push({ type: 'swing', d }); // (a lunge that hit nobody)
   const B = bodyOf(d);
+  B.pace = d.cpu ? (d.mode === 'car' ? CPU.PACE_CAR : CPU.PACE_CART) : 1; // (CPU dashers run a little slower)
   if (d.stunT > 0) { // dazed: the cart spins, no control
     turnTo(M.W, B, B.heading + 8 * Math.min(1, d.stunT) * DT);
     ctl = NO_CTL;
   }
   if (d.mode === 'cart') {
-    if (ctl.rush && d.rushCD <= 0) {
-      d.rushT = COMBAT.RUSH_TIME; d.rushCD = COMBAT.RUSH_CD;
+    if ((ctl.smash || ctl.rush || ctl.punch) && d.smashCD <= 0) { // SMASH: lunge (old rush / punch controls do the same)
+      d.smashT = COMBAT.SMASH_TIME; d.smashCD = COMBAT.SMASH_CD; d.smashHit = false;
       B.speed = Math.max(B.speed, B.H.CRUISE * 1.4);
-      ev.push({ type: 'rush', d });
+      ev.push({ type: 'smash', d });
     }
-    if (ctl.punch && d.punchCD <= 0) punch(M, d, ev);
-    if (d.rushT > 0) { // the charge: full speed ahead (you can still lean it a little)
-      B.boost = COMBAT.RUSH_BOOST;
+    if (d.smashT > 0 && !d.smashHit) smashReach(M, d, ev); // (someone right in front of the cart: it lands now)
+    if (d.smashT > 0) { // the lunge: full speed ahead (you can still lean it a little)
+      B.boost = COMBAT.SMASH_BOOST;
       const f = ctl.dir?.mag > 0.2 ? ctl.dir : { x: Math.sin(B.heading), z: Math.cos(B.heading) };
       ctl = { ...ctl, dir: { x: f.x, z: f.z, mag: 1 } };
     } else B.boost = 1;
@@ -175,7 +178,7 @@ function dasherStep(M, d, ctl, ev) {
       const ready = readyOrders(M, d);
       if (ready.length) {
         for (const o of held(M, d)) if (!ready.includes(o)) { release(M, d, o.i); ev.push({ type: 'dropOrder', d, order: o }); }
-        d.mode = 'car'; d.enterT = M.t; C.speed = 0; d.rushT = 0; d.hunting = -1;
+        d.mode = 'car'; d.enterT = M.t; C.speed = 0; d.smashT = 0; d.hunting = -1;
         B.abandoned = d.i; B.speed = 0; B.boost = 1; M.props.push(B);
         if (M.props.length > 10) M.props.shift();
         ev.push({ type: 'enter', d, orders: ready });
@@ -229,28 +232,35 @@ function trick(M, d, e, ev) {
   }
 }
 
-// --- combat
-function punch(M, d, ev) {
-  d.punchCD = COMBAT.PUNCH_CD; d.punchT = 0.25;
+// --- combat: one move, SMASH
+// A rival right in front of your cart's nose while you lunge: it lands.
+function smashReach(M, d, ev) {
   const A = d.cart, fx = A.x + Math.sin(A.heading) * 0.7, fz = A.z + Math.cos(A.heading) * 0.7;
   let best = null, bd = Infinity;
   for (const r of M.dashers) {
     if (r === d || r.mode !== 'cart' || r.guardT > 0 || Math.abs(r.cart.y - A.y) > 1.2) continue;
     const dist = Math.min(...circles(r.cart).map(([x, z]) => Math.hypot(x - fx, z - fz)));
     const ang = Math.abs(Math.atan2(Math.sin(Math.atan2(r.cart.x - A.x, r.cart.z - A.z) - A.heading), Math.cos(Math.atan2(r.cart.x - A.x, r.cart.z - A.z) - A.heading)));
-    if (dist <= COMBAT.PUNCH_REACH && ang <= COMBAT.PUNCH_ARC && dist < bd) { best = r; bd = dist; }
+    if (dist <= COMBAT.SMASH_REACH && ang <= COMBAT.SMASH_ARC && dist < bd) { best = r; bd = dist; }
   }
-  if (!best) { ev.push({ type: 'swing', d }); return; }
-  const want = needs(M, d), steal = Object.keys(best.bag).find((id) => want[id]);
+  if (best) land(M, d, best, ev);
+}
+// A smash lands: snatch an item you still need, or knock their cart's load all over the floor.
+function land(M, d, v, ev) {
+  if (v.guardT > 0 || v.mode !== 'cart') return false;
+  d.smashHit = true; d.smashT = Math.min(d.smashT, 0.12); // (the lunge stops on impact)
+  const A = d.cart, want = needs(M, d), steal = Object.keys(v.bag).find((id) => want[id]);
   if (steal) {
-    if (--best.bag[steal] <= 0) delete best.bag[steal];
+    if (--v.bag[steal] <= 0) delete v.bag[steal];
     d.bag[steal] = (d.bag[steal] || 0) + 1;
-    best.stunT = Math.max(best.stunT, COMBAT.STUN_STEAL); best.guardT = COMBAT.GUARD;
+    v.stunT = Math.max(v.stunT, COMBAT.STUN_STEAL); v.guardT = COMBAT.GUARD;
     d.guardT = Math.max(d.guardT, COMBAT.GUARD_THIEF); // (a getaway: no instant steal-back)
-    shove(best.cart, A, 4);
+    shove(v.cart, A, 5);
     d.style = Math.min(SLOWMO.MAX, d.style + SLOWMO.STEAL);
-    ev.push({ type: 'steal', d, from: best, id: steal, item: PRODUCT[steal] });
-  } else hit(M, best, d, 'punch', ev);
+    ev.push({ type: 'steal', d, from: v, id: steal, item: PRODUCT[steal] });
+    return true;
+  }
+  return hit(M, v, d, 'smash', ev);
 }
 
 function shove(V, A, v) {
@@ -258,10 +268,10 @@ function shove(V, A, v) {
   V.kx += (dx / l) * v; V.kz += (dz / l) * v;
 }
 
-// Knock items loose from a shopper's cart (a rush, a punch, a car).
+// Knock items loose from a shopper's cart (a smash, a car).
 export function hit(M, v, by, kind, ev = M.events) {
   if (v.mode !== 'cart' || v.guardT > 0) return false;
-  const n = { rush: COMBAT.SPILL_RUSH, punch: COMBAT.SPILL_PUNCH, car: COMBAT.SPILL_CAR }[kind];
+  const n = kind === 'car' ? COMBAT.SPILL_CAR : COMBAT.SPILL_SMASH;
   const pool = shuffle(Object.entries(v.bag).flatMap(([id, c]) => Array(c).fill(id)), M.rng);
   const lost = pool.slice(0, n);
   const V = v.cart;
@@ -270,8 +280,8 @@ export function hit(M, v, by, kind, ev = M.events) {
     const a = M.rng() * Math.PI * 2, sp = 2 + M.rng() * 2.5;
     M.loose.push({ id, x: V.x + Math.sin(V.heading) * 0.45, y: V.y + 1, z: V.z + Math.cos(V.heading) * 0.45, vx: Math.cos(a) * sp, vy: 4 + M.rng() * 2, vz: Math.sin(a) * sp, t0: M.t, from: v.i, rest: false });
   }
-  v.stunT = Math.max(v.stunT, { rush: COMBAT.STUN_RUSH, punch: COMBAT.STUN_PUNCH, car: COMBAT.STUN_CAR }[kind]);
-  v.guardT = COMBAT.GUARD; v.rushT = 0;
+  v.stunT = Math.max(v.stunT, kind === 'car' ? COMBAT.STUN_CAR : COMBAT.STUN_SMASH);
+  v.guardT = COMBAT.GUARD; v.smashT = 0;
   if (by) { shove(V, bodyOf(by), kind === 'car' ? 9 : 6.5); by.style = Math.min(SLOWMO.MAX, by.style + SLOWMO.SMASH); }
   V.grind = null;
   ev.push({ type: 'hit', d: v, by, kind, lost: lost.map((id) => PRODUCT[id]) });
@@ -292,8 +302,8 @@ function looseStep(M) {
   }
 }
 
-// Everyone against everyone: moving bodies shove each other (by mass); parked cars don't budge. A rush that
-// lands, or a car hitting a shopper hard, knocks items loose.
+// Everyone against everyone: moving bodies shove each other (by mass); parked cars don't budge. A lunge that
+// connects lands a smash; a car hitting a shopper hard knocks items loose.
 function collide(M, ev) {
   const live = M.dashers.map((d) => [bodyOf(d), d]), parked = M.dashers.filter((d) => d.mode === 'cart').map((d) => d.car);
   const all = [...live, ...M.props.map((p) => [p, null])];
@@ -307,8 +317,8 @@ function collide(M, ev) {
       ev.push({ type: 'bump', A, B, v });
       if (da && db) {
         if (da.mode === 'cart' && db.mode === 'cart') {
-          if (da.rushT > 0 && v > COMBAT.RUSH_HIT && hit(M, db, da, 'rush', ev)) da.rushT = 0;
-          if (db.rushT > 0 && v > COMBAT.RUSH_HIT && hit(M, da, db, 'rush', ev)) db.rushT = 0;
+          if (da.smashT > 0 && !da.smashHit) land(M, da, db, ev);
+          if (db.smashT > 0 && !db.smashHit) land(M, db, da, ev);
         } else if (da.mode === 'car' && db.mode === 'cart' && v > COMBAT.CAR_HIT) hit(M, db, da, 'car', ev);
         else if (db.mode === 'car' && da.mode === 'cart' && v > COMBAT.CAR_HIT) hit(M, da, db, 'car', ev);
       }

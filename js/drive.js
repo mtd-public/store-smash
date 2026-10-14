@@ -125,7 +125,7 @@ export function driveStep(W, B, ctl, dt, ev = null) {
   if (B.heading !== h0) { const h1 = B.heading; B.heading = h0; const fl = circleFloors(W, B), before = penAt(W, B, B.x, B.z, fl); B.heading = h1; const after = penAt(W, B, B.x, B.z, fl); if (after > before + 0.06 && after > 0.06) B.heading = h0; } // (a little slack: pivoting in a corner may brush a wall; the move below slides you clear)
   B.steer = wrapAngle(B.heading - h0) / dt; // (yaw rate this step: the renderer leans and steers the wheels with it)
   if (B.grounded) {
-    const target = H.CRUISE * throttle * (1 - slow) * (B.plat?.slow ?? 1) * (B.boost ?? 1); // (boost: a cart rush)
+    const target = H.CRUISE * throttle * (1 - slow) * (B.plat?.slow ?? 1) * (B.boost ?? 1) * (B.pace ?? 1); // (boost: a smash lunge; pace: CPU dashers run slower)
     B.speed = damp(B.speed, target, Math.abs(target) > Math.abs(B.speed) && Math.sign(target) === Math.sign(B.speed || target) ? H.ACCEL : H.BRAKE, dt);
     if (Math.abs(B.speed) < 0.02 && !throttle) B.speed = 0;
   }
@@ -282,7 +282,7 @@ function catchRail(W, B, prevY, emit) {
 }
 function grindStep(W, B, ctl, dt, emit) {
   const g = B.grind, H = B.H;
-  B.speed = Math.max(B.speed, H.CRUISE * RAIL.MIN_SPEED) * (B.boost ?? 1) ** dt; // (a rush on a rail: faster still)
+  B.speed = Math.max(B.speed, H.CRUISE * RAIL.MIN_SPEED) * (B.boost ?? 1) ** dt; // (a smash lunge on a rail: faster still)
   g.t += (g.dir * B.speed * dt) / g.r.len;
   g.time += dt;
   // run off an end onto the next rail (a landing rail into a handrail), or pop off

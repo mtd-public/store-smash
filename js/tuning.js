@@ -87,30 +87,29 @@ export const MATCH = {
   ORDERS: (n) => Math.max(3, Math.min(7, Math.round(n * 1.25) + 1)), // board size for n dashers: always a race for some
 };
 
-// Cart combat: barge with a rush, or swing a punch. A punch on a rival who carries something you still need
-// steals it straight into your cart; otherwise (and every rush or car hit) knocks items loose to spill on the
-// floor, where anyone who needs them can grab them.
+// Cart combat: one move, SMASH — a lunge with the cart. Whoever it lands on (touching, or right in front of your cart
+// as you lunge) loses an item you still need straight into your cart; if they carry nothing you need, their stuff
+// spills on the floor, where anyone who needs it can grab it. A car hitting a shopper spills them too.
 export const COMBAT = {
-  RUSH_TIME: 0.5,      // s of charge: about 5 m at the boosted speed
-  RUSH_BOOST: 1.75,    // × cruise while charging
-  RUSH_CD: 2.4,        // s before the next rush
-  RUSH_HIT: 1.8,       // m/s closing speed that counts as a rush landing
-  PUNCH_REACH: 2.3,    // m from your cart's nose to the rival's middle
-  PUNCH_ARC: 1.9,      // rad either side of your heading (a wide swipe: the shopper reaches round the cart)
-  PUNCH_CD: 0.9,       // s between swings
-  STUN_RUSH: 1.0,      // s dazed after a rush lands (no control, the cart spins)
-  STUN_PUNCH: 0.6,
-  STUN_STEAL: 0.35,
+  SMASH_TIME: 0.45,    // s of lunge: about 4 m at the boosted speed
+  SMASH_BOOST: 1.8,    // × cruise while lunging
+  SMASH_CD: 1.5,       // s before the next one
+  SMASH_REACH: 1.7,    // m from your cart's nose to a rival's nearest circle that lands it
+  SMASH_ARC: 1.3,      // rad either side of your heading
+  STUN_SMASH: 0.9,     // s dazed after a smash spills you (no control, the cart spins)
+  STUN_STEAL: 0.45,    // s after having something snatched
   STUN_CAR: 1.3,       // hit by a car
   CAR_HIT: 7,          // m/s closing speed for a car to knock a shopper's items loose
-  SPILL_RUSH: 2,       // items knocked loose
-  SPILL_PUNCH: 1,
+  SPILL_SMASH: 2,      // items knocked loose
   SPILL_CAR: 3,
   GUARD: 1.6,          // s after being hit when you can't be hit again (no stun-locking)
   GUARD_THIEF: 2,      // s a thief can't be robbed back (otherwise two dashers needing one item trade it forever)
   LOOSE_WAIT: 0.5,     // s before a spilled item can be picked up (the victim waits LOOSE_WAIT × 2)
   HOSTILE_R: 9,        // m: a rival this close, coming your way, raises the warning banner
 };
+
+// CPU dashers run a little slower than you, on foot and at the wheel (the same controller, a lower top speed).
+export const CPU = { PACE_CART: 0.84, PACE_CAR: 0.86 };
 
 // Slow-mo (Dr. Mow's slow-mo meter): tricks fill a style meter; hold SLO-MO to spend it and the whole world
 // runs at SCALE. Sick moments (a kicker launch, a rail grab off a hop, a big drop) also drop into a short burst

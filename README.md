@@ -19,25 +19,32 @@ Dr. Mow.
 ## How a shift plays
 
 1. **Order board.** A handful of orders (2–4 items each, from different departments, each with its own drop-off
-   address and tip). Take up to **3** at once; rivals can take the same ones. Open the board again mid-shift
-   with **O** / 📋 / pad Back.
+   address and tip). Take up to **3** at once. The CPU dashers only start taking orders once the shift starts
+   (a second or two after GO), and they can take the same ones as you. Open the board again mid-shift with
+   **O** / 📋 / pad Back: the shift holds still while it's open, so nobody poaches an order while you browse.
 2. **Shop.** The store's **layout is shuffled every shift**: departments move between the four aisle blocks
    (two per floor), the front hall's produce bins and the outdoor yard's benches. Your list names only the
-   department; the hanging signs, the "UPPER FLOOR ↑" signposts and the **store directory** by the door tell you
-   where it is this time. Roll past a shelf with something you need to grab it (a glint shows over it once
-   you're close). Departments: Produce, Paper Goods (toilet paper), Hardware (plungers), Toys, Home & Carpet,
-   Garden Center.
-3. **Brawl.** **Rush** (charge) into a rival to knock items out of their cart; **punch** a rival carrying
-   something you need to **steal** it straight into your cart (otherwise their stuff spills on the floor).
-   Spilled items can be grabbed by anyone who needs them. A car hitting a shopper spills them too. When a
-   rival is coming for you, an animated **HOSTILE DASHER APPROACHING** banner drops in.
+   department and its **icon** (a kawaii apple, toilet roll, plunger, teddy, rolled rug and potted sprout). Each
+   department's floor is tinted in its colour and has its icon **printed in every aisle**. The same badges are on
+   the hanging signs, the "UPPER FLOOR ↑" signposts and the **store directory** by the door. Anything on your
+   list within about 24 m on your floor stands out: a big glowing copy bobs over its shelf and a ring marks
+   where to grab it in the aisle. Roll past the shelf to grab it. Every department stocks its own shelf goods,
+   and the goods are bigger and self-lit. Departments: Produce, Paper Goods (toilet paper), Hardware
+   (plungers), Toys, Home & Carpet, Garden Center.
+3. **Brawl.** One attack, **SMASH**: a short lunge with your cart. Catch a rival carrying something you need
+   and you **steal** it straight into your cart; otherwise their stuff spills on the floor and they're dazed.
+   Spilled items can be grabbed by anyone who needs them. A car hitting a shopper spills them too. When a rival
+   is coming for you, an animated **HOSTILE DASHER APPROACHING** banner drops in. CPU dashers move about 15%
+   slower than you, on foot and at the wheel.
 4. **Tricks.** Hop onto any railing, travelator handrail, checkout ledge or yard bench edge to **grind** it
    (the handrails chain from the upper floor all the way down). Hop at the lip of a **kicker**: the one upstairs
    flies you over the edge rail and drops you into the front hall. Tricks, steals and smashes fill your
    **SLO-MO** meter; hold slow-mo for bullet time, and sick moments (launches, rail grabs off a hop, big drops)
    drop into a short burst on their own.
 5. **Car.** With at least one order complete, touch your own car — in the outdoor lot, the indoor garage, or
-   up on the garage roof across the skybridge. Unfinished orders go back on the board; your cart stays behind
+   up on the garage roof across the skybridge. Your car **glows** in your colour, with a ring, a tall beam and a
+   YOUR CAR tag. Once an order is ready, it pulses harder and an arrow on the edge of the screen points to it
+   whenever it's off screen. Unfinished orders go back on the board; your cart stays behind
    as a prop anyone can smash.
 6. **Dash.** Drive to each drop-off (the minimap and GPS chevrons only appear on the road). The first dasher to
    deliver an order gets the tip and **poaches** it from everyone else holding it. Nothing left to deliver?
@@ -51,14 +58,13 @@ The shift ends when every order is delivered (or after 6 minutes). Most money wi
 |---|---|---|---|
 | Go that way | stick / WASD / arrows (screen directions) | P1 WASD, P2 arrows | left stick / d-pad |
 | Hop | Space | P1 Space, P2 Enter | A |
-| Rush | Shift | P1 left Shift, P2 right Shift | B / RT |
-| Punch / steal | F (or E) | P1 F, P2 / | X |
+| SMASH (lunge / steal) | Shift, F, E, J or K | P1 left Shift / Q / F / E, P2 right Shift / . / / | B, X or RT |
 | Slow-mo (hold) | X | P1 R, P2 ' | LB / LT |
 | Order board | O / Tab | O | Back |
 | Camera (iso / chase) | C | C | Y |
 | Pause | Esc / P | | Start |
 
-Touch (one player): a floating stick on the left, HOP / RUSH / PUNCH / SLO-MO buttons on the right. In the
+Touch (one player): a floating stick on the left, HOP / SMASH / SLO-MO buttons on the right. In the
 chase camera, keys steer like a car (←/→ turn, ↑ go, ↓ brake / back up).
 
 ## Seeing through the level
@@ -76,10 +82,19 @@ dasher visible in a two-storey building:
 
 Every dasher also draws an **x-ray silhouette** where the level hides them.
 
+## Look
+
+Characters and their cars are **toon-shaded** (three tones) with **ink outlines**: an inverted hull pushed out
+along welded normals, scaled with distance so it stays a couple of pixels wide in both the iso and the chase
+cameras. Shoppers wear a round delivery jacket with a collar and chest logo, an insulated bag on the back,
+hair under a delivery cap, mitten hands and chunky sneakers. Each cart flies a pennant in its dasher's colour.
+Cars are bubbly hatchbacks with rounded bodies, a glass band all round and a DASH sign on the roof. The
+department icons are drawn on canvases in `js/icons.js`, with no image files.
+
 ## Faces
 
 Shoppers have chibi heads wearing **Dr. Mow's cartoon faces** (`js/faces.js`, the farmer's set copied as is):
-joy on a grab, fired up on a rush or a grind, dizzy (@ @) when smashed, shock, cry when poached, and the
+joy on a grab, fired up on a smash or a grind, dizzy (@ @) when smashed, shock, cry when poached, and the
 **on-fire pair (aghast / seethe) flipping back and forth** when you've been robbed or a hostile dasher is
 closing in. Your current face shows in the HUD portrait.
 
@@ -96,7 +111,8 @@ closing in. Your current face shows in the HUD portrait.
 | `js/nav.js` | nav graphs sampled straight off the collision world (one per body), A*, Dijkstra |
 | `js/ai.js` | CPU dashers: order picks, routing, combat, avoidance, escapes, a last-resort tow |
 | `js/scene.js` | renderer: merged level meshes, signs, see-through, cutaways, x-ray, dashers, faces, guides, split screen |
-| `js/models.js`, `js/faces.js` | procedural shopper / cart / car / products; Dr. Mow's faces |
+| `js/models.js`, `js/faces.js` | procedural shopper / cart / car / products, toon material, ink outlines; Dr. Mow's faces |
+| `js/icons.js` | the kawaii department icons and badges (floor decals, signs, directory, HUD, board) |
 | `js/input.js` | touch stick, keys, pads, two local players |
 | `js/main.js` | shell: title (live CPU match behind it), board, HUD, minimap, banner, slow-mo, toasts, results |
 | `js/seethru.js`, `js/sfx-synth.js`, `js/utils.js` | Dr. Mow's kits |
@@ -105,7 +121,7 @@ closing in. Your current face shows in the HUD portrait.
 
 - `node tools/sim-check.mjs [matches]` — headless: the controller (hop arc, curb, ramp, floor vs ceiling, wall
   slide, car vs cart turning, stunt jump), grinds and kickers, reachability (every slot, car spot and address
-  on the nav graphs), combat (steal, rush spill, pick-up), then whole 6-CPU shifts over several seeds: every
+  on the nav graphs), combat (smash steal, smash spill, pick-up), then whole 6-CPU shifts over several seeds: every
   order delivered and nobody stalls for 20 s.
 - `BASE=http://localhost:8080/ CHROMIUM=/opt/pw-browsers/chromium node tools/smoke.mjs` — Playwright:
   desktop, phone and split screen; the board, keys, see-through shots, a grind, a kicker launch, an autoplayed

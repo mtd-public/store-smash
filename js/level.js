@@ -166,6 +166,16 @@ function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel,
     const bin = bi * 2 + bk;
     for (const sx of [-0.65, 0.65]) for (const sz of [-1, 1]) L.deptZones.HALL.slots.push(L.slots.push({ zone: 'HALL', bin, x: bx + sx, y: G + 0.95, z: bz + sz * 0.42, at: { x: bx + sx, y: G, z: bz + sz * 2.05 }, face: 0, table: true }) - 1);
   }
+  // the floor of each zone: tinted in its department's colour per match, with the department's icon printed in
+  // every aisle (js/scene.js draws them) so you can read where you are from the camera
+  const paint = (zid, y, x0, x1, z0, z1, decals) => Object.assign(L.deptZones[zid], { floorMat: { y, x0, x1, z0, z1 }, decals: decals.map(([x, z, r = 1.15]) => ({ x, y, z, r })) });
+  const aisles = (xs, zs) => xs.flatMap((x) => zs.map((z) => [x, z]));
+  paint('GW', G, -27.5, -10, -37.6, -19.4, aisles([-25.8, -21, -16, -11], [-33.4, -24.2]));
+  paint('GE', G, -2.4, 15.5, -37.6, -19.4, aisles([-0.9, 4, 9, 13.8], [-33.4, -24.2]));
+  paint('UW', F2, -27.5, -10, -39.5, -18.3, aisles([-25.8, -21, -16, -11], [-33.4, -24.2]));
+  paint('UE', F2, -2.4, 15.5, -39.5, -18.3, aisles([-0.9, 4, 9, 13.8], [-33.4, -24.2]));
+  paint('HALL', G, -26.2, -10.8, -12.2, -4.6, [[-25.6, -8.4, 1.05], [-20.5, -8.4, 1.15], [-15.5, -8.4, 1.15]]);
+  paint('YARD', G, -38.6, -29.4, -38.4, -15.6, [[-34, -27, 1.6], [-30.6, -33], [-30.6, -21], [-37.4, -33, 1], [-37.4, -21, 1]]);
   // signposts for the floors (their text names this match's departments)
   L.floorSigns = [{ x: -17, y: 3.2, z: -13.8, w: 9, h: 0.9, floor: 'U' }, { x: 5, y: 3.2, z: -13.8, w: 9, h: 0.9, floor: 'U' }];
   L.directory = { x: -14.6, y: G + 1.5, z: -3.6, w: 3.6, h: 2.6 }; // the store directory, just inside the doors

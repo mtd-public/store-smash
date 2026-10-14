@@ -57,7 +57,8 @@ await run('desktop', { viewport: { width: 1280, height: 800 } }, async (page) =>
   // a grind: hop by the upper floor's edge rail, ride it in slow-mo (GAME.force drives P1 exactly)
   await place(page, 3, 5.15, -19.3, Math.PI / 2);
   await page.evaluate(() => { GAME.force = { dir: { x: 1, z: 0, mag: 1 }, jump: true }; });
-  await page.waitForFunction(() => !!GAME.state.M.dashers[0].cart.grind, null, { timeout: 4000 }).catch(() => console.log(' (no grind)'));
+  const caught = await page.evaluate(() => { for (let i = 0; i < 240 && !GAME.state.M.dashers[0].cart.grind; i++) GAME.ff(1 / 60); return !!GAME.state.M.dashers[0].cart.grind; }); // (stepped, not timed: software GL is slow)
+  if (!caught) { console.log(' (no grind)'); failures++; }
   await page.keyboard.down('KeyX'); await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/trick-grind.png` });
   await page.keyboard.up('KeyX');

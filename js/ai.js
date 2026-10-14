@@ -2,10 +2,11 @@
 // (js/match.js); all they get is a map (js/nav.js). Like Dr. Mow's autopilot they steer at a point a little way
 // down a path, and they can be bumped off it, get stuck on a pillar, or take the long way round.
 //
-// Plan: stack 1–3 orders off the board (each CPU has a taste for it), then go for whatever is cheapest to reach:
-// a shelf with something the orders need, a spilled item on the floor, or — for the pushy ones — a rival whose
-// cart holds it (walk up and punch: a steal). Then the car, each drop-off, and back to park and shop again.
-// On the way they barge and swing at rivals who wander into reach, more often the higher their aggression.
+// Plan: once the shift starts (never while you're still on the order board), stack 1–3 orders (each CPU has a
+// taste for it), then go for whatever is cheapest to reach: a shelf with something the orders need, a spilled
+// item on the floor, or — for the pushy ones — a rival whose cart holds it (walk up and SMASH: a steal). Then the
+// car, each drop-off, and back to park and shop again. On the way they smash rivals who wander into reach, more
+// often the higher their aggression. They run a little slower than you (tuning.js CPU).
 import { findPath, nearestNode, dijkstra } from './nav.js';
 import { bodyOf, needs, held, readyOrders, accept, openOrders, bagCount } from './match.js';
 import { mulberry32 } from './utils.js';
@@ -80,6 +81,9 @@ export function think(M, d, brain, nav, dt) {
   brain.huntT = (brain.huntT || 0) - dt;
   d.hunting = brain.huntT > 0 ? brain.huntI : -1; // (who we've got our eye on: the HUD's hostile warning reads it)
   if (d.stunT > 0) { brain.path = null; return { dir: null }; }
+  // a moment at the start to look at the app, then take orders (the board is all yours until GO)
+  brain.wake ??= M.t + 0.6 + brain.rng() * 2.2;
+  if (M.t < brain.wake) return { dir: null };
   if (!car && !held(M, d).length && openOrders(M).length) pickOrders(M, d, brain);
   // the plan changes when the cart or the orders do
   const sig = `${d.mode}|${bagCount(d)}|${d.orders.join(',')}|${M.loose.length}`;
@@ -102,8 +106,8 @@ export function think(M, d, brain, nav, dt) {
   if (!T) return { dir: null };
   if (T.kind === 'rival') { T.x = T.rival.cart.x; T.y = T.rival.cart.y; T.z = T.rival.cart.z; if (T.rival.mode !== 'cart' || !T.rival.bag[T.id]) { brain.target = null; return { dir: null }; } }
 
-  // combat, decided a few times a second
-  let rush = false, punch = false;
+  // combat, decided a few times a second: one move, SMASH (a lunge: steals what we need, else spills them)
+  let smash = false;
   if (!car && (brain.decideT -= dt) <= 0) {
     brain.decideT = 0.15;
     const need = needs(M, d);
@@ -113,18 +117,19 @@ export function think(M, d, brain, nav, dt) {
       const ang = Math.abs(Math.atan2(Math.sin(Math.atan2(dx, dz) - B.heading), Math.cos(Math.atan2(dx, dz) - B.heading)));
       const has = bagCount(r) > 0, mine = Object.keys(r.bag).some((k) => need[k]);
       if (dist < 6 && ang < 0.8 && (mine || (has && brain.aggro > 0.6))) { brain.huntI = r.i; brain.huntT = 0.6; d.hunting = r.i; } // (sizing them up)
-      if (d.punchCD <= 0 && dist < COMBAT.PUNCH_REACH + 0.5 && ang < COMBAT.PUNCH_ARC * 0.9 && (mine ? brain.stealCD <= 0 && brain.rng() < 0.2 + brain.aggro * 0.5 : has && brain.rng() < brain.aggro * 0.06)) {
-        punch = true; brain.huntI = r.i; brain.huntT = 0.6; d.hunting = r.i; if (mine) { brain.stealCD = 5; if (brain.target?.kind === 'rival') { brain.target = null; brain.mugCD = 10; } }
+      if (d.smashCD > 0) continue;
+      if (dist < COMBAT.SMASH_REACH + 1.4 && ang < COMBAT.SMASH_ARC * 0.8 && (mine ? brain.stealCD <= 0 && brain.rng() < 0.2 + brain.aggro * 0.5 : has && brain.rng() < brain.aggro * 0.06)) {
+        smash = true; brain.huntI = r.i; brain.huntT = 0.6; d.hunting = r.i; if (mine) { brain.stealCD = 5; if (brain.target?.kind === 'rival') { brain.target = null; brain.mugCD = 10; } }
         break;
       }
-      if (d.rushCD <= 0 && has && dist > 2.5 && dist < 7 && ang < 0.3 && brain.rng() < brain.aggro * 0.08) { rush = true; brain.huntI = r.i; brain.huntT = 0.8; d.hunting = r.i; break; }
+      if (has && dist > 3 && dist < 5.5 && ang < 0.3 && brain.rng() < brain.aggro * 0.05) { smash = true; brain.huntI = r.i; brain.huntT = 0.8; d.hunting = r.i; break; }
     }
   }
 
   // a rival in reach of a straight line: just go at them
   if (T.kind === 'rival' && Math.hypot(T.x - B.x, T.z - B.z) < 7 && walkable(M.W, B.H, B.x, B.z, B.y, T.x, T.z, null, { stepLen: 0.8 })) {
     const dx = T.x - B.x, dz = T.z - B.z, l = Math.hypot(dx, dz) || 1;
-    return { dir: { x: dx / l, z: dz / l, mag: 1 }, rush, punch };
+    return { dir: { x: dx / l, z: dz / l, mag: 1 }, smash };
   }
   if (!brain.path || (brain.replanT -= dt) <= 0) {
     brain.path = findPath(N, B, T) || [{ x: T.x, y: T.y, z: T.z }];
@@ -188,7 +193,7 @@ export function think(M, d, brain, nav, dt) {
     if (T.kind === 'park' && toEnd < MATCH.PARK_R - 1) return { dir: null };
   } else if (T.kind === 'car' && toEnd < MATCH.DOOR_R + 3) mag = 0.5;
   [dx, dz] = avoid(M, d, B, dx, dz, T);
-  return { dir: { x: dx, z: dz, mag }, rush, punch };
+  return { dir: { x: dx, z: dz, mag }, smash };
 }
 
 // Local avoidance: the nav graph doesn't know where cars are parked or who's in the way, so lean away from any

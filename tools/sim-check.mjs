@@ -115,17 +115,17 @@ const run = (B, ctl, secs, each) => { const ev = []; for (let t = 0; t < secs; t
   const id = o.items[0].id;
   V.bag[id] = 1; V.bag.extraThing = 0; delete V.bag.extraThing;
   Object.assign(A.cart, { x: -6, z: -8, heading: Math.PI, speed: 0, kx: 0, kz: 0 }); Object.assign(V.cart, { x: -6, z: -9.6, heading: 0, speed: 0, kx: 0, kz: 0 });
-  matchStep(M, [{ dir: null, punch: true }, null]);
+  matchStep(M, [{ dir: null, smash: true }, null]);
   const st = M.events.find((e) => e.type === 'steal');
-  ok(st && A.bag[id] === 1 && !V.bag[id], `a punch steals an item you need from a rival's cart (${st?.item.name})`);
+  ok(st && A.bag[id] === 1 && !V.bag[id], `a smash on a rival carrying what you need steals it into your cart (${st?.item.name})`);
   M.events.length = 0;
-  // the victim is guarded for a moment, then a rush into them spills their cart
-  V.guardT = 0; V.stunT = 0; V.bag = { [o.items[1].id]: 2 };
+  // the victim is guarded for a moment; then a smash lunge into someone carrying nothing you need spills their cart
+  V.guardT = 0; V.stunT = 0; V.bag = { [o.items[1].id]: 2 }; A.bag[o.items[1].id] = 1; A.guardT = 0; // (A has its share already: nothing to steal)
   Object.assign(A.cart, { x: -6, z: -6, heading: Math.PI, speed: 0, kx: 0, kz: 0, vh: Math.PI }); Object.assign(V.cart, { x: -6, z: -10.5, heading: Math.PI / 2, vh: Math.PI / 2, speed: 0, kx: 0, kz: 0 });
-  A.rushCD = 0;
+  A.smashCD = 0;
   let spilled = null;
-  for (let k = 0; k < 120 && !spilled; k++) { matchStep(M, [{ dir: null, rush: k === 0 }, null]); spilled = M.events.find((e) => e.type === 'hit'); M.events.length = 0; }
-  ok(spilled && spilled.lost.length === COMBAT.SPILL_RUSH && M.loose.length === COMBAT.SPILL_RUSH && V.stunT > 0, `a rush knocks ${spilled?.lost.length} items loose and dazes the victim`);
+  for (let k = 0; k < 120 && !spilled; k++) { matchStep(M, [{ dir: null, smash: k === 0 }, null]); spilled = M.events.find((e) => e.type === 'hit'); M.events.length = 0; }
+  ok(spilled && spilled.lost.length === COMBAT.SPILL_SMASH && M.loose.length === COMBAT.SPILL_SMASH && V.stunT > 0, `a smash lunge knocks ${spilled?.lost.length} items loose and dazes the victim`);
   for (let k = 0; k < 240; k++) matchStep(M, [null, null]);
   ok(M.loose.every((l) => l.rest && Math.abs(l.y - G) < 0.05), 'spilled items land on the floor');
   // the victim (who needs them) picks one back up by rolling over it
@@ -144,7 +144,6 @@ for (let g = 0; g < games; g++) {
   const seed = 1000 + g * 7919;
   const M = createMatch(L, W, { seed, humans: 0, cpus: 6 });
   const brains = M.dashers.map((d) => createBrain(M, d, 0.75 + 0.05 * d.i, seed));
-  M.dashers.forEach((d, i) => pickOrders(M, d, brains[i]));
   const tg = performance.now();
   const n = { pick: 0, enter: 0, deliver: 0, poached: 0, steal: 0, hit: 0, exit: 0 };
   // a stall: a dasher with something to do who hasn't got 2.5 m from where they were, for a long while

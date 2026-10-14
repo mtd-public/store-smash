@@ -5,6 +5,7 @@
 // Console hooks (for playtests and tools/smoke.mjs): GAME.start({ humans, cpus, seed }), GAME.ff(seconds),
 // GAME.autoplay = true (a CPU brain drives player 1), GAME.state.
 import { buildLevel, DEPTS, EDGE } from './level.js';
+import { deptIconURL } from './icons.js';
 import { createWorld } from './world.js';
 import { buildNav, findPath } from './nav.js';
 import { HANDLING, DT, MATCH, COMBAT, SLOWMO } from './tuning.js';
@@ -37,7 +38,7 @@ sfx.setMuted(settings.muted);
 const unlock = () => sfx.unlock();
 addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
 const play = (name, o) => { const f = SFX[name]; if (f && sfx.ctx) f(sfx, o); };
-for (const [id, a] of [['#btn-hop', 'hop'], ['#btn-rush', 'rush'], ['#btn-punch', 'punch'], ['#btn-slow', 'slow']]) input.bindButton($(id), a);
+for (const [id, a] of [['#btn-hop', 'hop'], ['#btn-smash', 'smash'], ['#btn-slow', 'slow']]) input.bindButton($(id), a);
 input.slowBtn = $('#btn-slow');
 
 const state = { scale: 1, autoSlowT: 0, autoGap: 0, slowing: [false, false], mode: 'title', M: null, brains: [], locals: [], acc: 0, guideT: 0, guides: [], overT: 0, autoplay: false, panes: [], hud: [], attractK: 0, boardOpen: false, hostile: [] };
@@ -48,7 +49,7 @@ function newMatch({ humans, cpus, seed }) {
   const M = createMatch(L, W, { humans, cpus, seed });
   state.M = M;
   state.brains = M.dashers.map((d, i) => createBrain(M, d, d.cpu ? 0.78 + 0.04 * ((i * 37) % 5) : 0.95, M.seed));
-  M.dashers.forEach((d, i) => { if (d.cpu) pickOrders(M, d, state.brains[i]); });
+  // (CPU dashers take their orders once the shift starts — the board is yours until GO: js/ai.js think)
   state.locals = M.dashers.filter((d) => d.human).map((d) => d.i);
   state.acc = 0; state.overT = 0; state.guides = []; state.hostile = state.locals.map(() => ({ t: 0, who: null }));
   view.setMatch(M, state.locals);
@@ -100,7 +101,7 @@ function simStep(first) {
 // Input → the controller's format. Isometric: the stick / keys / d-pad point the way on screen. Chase: the
 // stick is camera-relative (so it steers), keys steer like a car.
 function toCtl(k, inp, first) {
-  const act = { jump: first && inp.jump, rush: first && inp.rush, punch: first && inp.punch };
+  const act = { jump: first && inp.jump, smash: first && inp.smash };
   if (view.chase && inp.keys && !inp.touch) return { turn: inp.keys.x, throttle: -inp.keys.y || (inp.keys.x ? 1 : 0), ...act };
   if (!inp.dir) return { dir: null, ...act };
   const w = view.screenToWorld(k, inp.dir.x, inp.dir.y);
@@ -142,7 +143,7 @@ function handleEvent(e) {
       break;
     case 'grindStart': if (local(e.B)) play('clank'); break;
     case 'launch': if (local(e.B)) play('boing'); break;
-    case 'rush': if (mine(e.d)) play('boost'); break;
+    case 'smash': if (mine(e.d)) play('boost'); break;
     case 'enter': if (mine(e.d)) { play('boost'); toast(`IN THE CAR! Deliver ${e.orders.map((o) => o.tag).join(', ')}`, 'small', e.d); } else toast(`${e.d.name} is in the car`, 'small'); break;
     case 'dropOrder': if (mine(e.d)) toast(`Order ${e.order.tag} dropped (incomplete)`, 'small', e.d); break;
     case 'deliver':
@@ -169,10 +170,14 @@ function frame(now) {
   const M = state.M;
   if (M && (state.mode === 'play' || state.mode === 'title')) {
     frameInput = state.mode === 'play' ? input.read() : [];
-    state.acc += dt * slowMo(dt);
-    let first = true, n = 0;
-    while (state.acc >= DT && n < 14) { simStep(first); first = false; state.acc -= DT; n++; }
-    if (n >= 14) state.acc = 0;
+    // the board mid-shift stops the world: nobody can poach an order while you're on the board screen
+    const onHold = state.mode === 'play' && state.boardOpen && M.phase === 'play';
+    if (!onHold) {
+      state.acc += dt * slowMo(dt);
+      let first = true, n = 0;
+      while (state.acc >= DT && n < 14) { simStep(first); first = false; state.acc -= DT; n++; }
+      if (n >= 14) state.acc = 0;
+    }
     if (state.mode === 'play') {
       if (M.phase === 'board') updateBoardTimer();
       if (M.phase === 'ready') updateCountdown();
@@ -223,12 +228,21 @@ function updateGuides(dt) {
       state.guides[k] = { obj, path };
       view.setGuides(k, { beams: (ready.length ? ready.map((o) => o.drop) : [d.spot]), path, body: B });
     } else {
-      const need = needs(M, d), glints = [];
-      L.slots.forEach((s, i) => { const id = M.O.stock[i]; if (id && need[id] && Math.abs(s.at.y - B.y) < 1.5 && Math.hypot(s.x - B.x, s.z - B.z) < 7) glints.push({ x: s.x, y: s.y, z: s.z }); });
-      for (const l of M.loose) if (need[l.id]) glints.push(l);
-      if (!Object.keys(need).length && readyOrders(M, d).length) glints.push({ x: d.car.x, y: d.car.y + 1.4, z: d.car.z });
+      // everything on your list within reach of this floor: a ring where you grab it, a big copy over the shelf
+      // (one per produce bin), a glint on the slot itself when you're close
+      const need = needs(M, d), glints = [], wants = [], rings = [], bins = new Set();
+      const near = [];
+      L.slots.forEach((s, i) => { const id = M.O.stock[i]; if (id && need[id] && Math.abs(s.at.y - B.y) < 2) { const dist = Math.hypot(s.x - B.x, s.z - B.z); if (dist < 24) near.push({ s, id, dist }); } });
+      near.sort((a, b) => a.dist - b.dist);
+      for (const { s, id, dist } of near) {
+        rings.push(s.at);
+        if (dist < 9) glints.push({ x: s.x, y: s.y, z: s.z });
+        if (s.bin != null) { if (bins.has(s.bin)) continue; bins.add(s.bin); }
+        wants.push({ id, x: s.x, y: s.at.y + (s.shelf ? 2.9 : s.rack ? 2.1 : 1.9), z: s.z });
+      }
+      for (const l of M.loose) if (need[l.id]) { glints.push(l); wants.push({ id: l.id, x: l.x, y: l.y + 1.3, z: l.z }); }
       state.guides[k] = { obj: null, path: null };
-      view.setGuides(k, { glints });
+      view.setGuides(k, { glints, wants, rings, car: { show: true, ready: readyOrders(M, d).length > 0 } });
     }
   });
 }
@@ -248,14 +262,15 @@ function buildPanes(locals) {
     Object.assign(el.style, { left: p.x * 100 + '%', top: p.y * 100 + '%', width: p.w * 100 + '%', height: p.h * 100 + '%' });
     el.innerHTML = `${n > 1 ? `<div class="tag" style="background:${hex(d.color)}">${d.name}</div>` : ''}<canvas class="portrait" width="128" height="128"></canvas><div class="list"><div class="lb"></div><div class="style">SLO-MO <i><b></b></i><span>${n > 1 ? (p.k ? "'" : 'R') : 'X'}</span></div></div>
       <div class="hostile hidden"><div class="stripes"></div><b>⚠ HOSTILE DASHER APPROACHING ⚠</b><span></span></div>
-      <div class="objective"></div><div class="speed"></div><canvas class="minimap hidden" width="300" height="300"></canvas>`;
+      <div class="objective"></div><div class="speed"></div><canvas class="minimap hidden" width="300" height="300"></canvas>
+      <div class="cararrow hidden" style="--c:${hex(d.color)}"><i></i><span></span></div>`;
     if (n > 1 && p.k === 0) el.querySelector('.list').style.top = '44px';
     root.appendChild(el);
-    state.hud.push({ el, portrait: el.querySelector('.portrait'), faceSig: '', list: el.querySelector('.lb'), meter: el.querySelector('.style b'), obj: el.querySelector('.objective'), speed: el.querySelector('.speed'), map: el.querySelector('.minimap'), hostile: el.querySelector('.hostile'), sig: '' });
+    state.hud.push({ el, portrait: el.querySelector('.portrait'), faceSig: '', list: el.querySelector('.lb'), meter: el.querySelector('.style b'), obj: el.querySelector('.objective'), speed: el.querySelector('.speed'), map: el.querySelector('.minimap'), hostile: el.querySelector('.hostile'), arrow: el.querySelector('.cararrow'), sig: '' });
   }
   const touch = locals.length === 1 && matchMedia('(pointer: coarse)').matches;
   document.body.classList.toggle('touch', touch);
-  for (const id of ['#btn-hop', '#btn-rush', '#btn-punch', '#btn-slow']) $(id).classList.toggle('hidden', !touch);
+  for (const id of ['#btn-hop', '#btn-smash', '#btn-slow']) $(id).classList.toggle('hidden', !touch);
   $('#btn-cam').classList.toggle('hidden', !locals.length);
   $('#btn-board').classList.toggle('hidden', !locals.length);
 }
@@ -286,7 +301,7 @@ function updateHud(dt) {
         const rows = o.items.map((it) => {
           const got = (left[it.id] || 0) > 0;
           if (got) left[it.id]--;
-          return `<div class="row${got ? ' got' : ''}"><span class="dot" style="background:${hex(it.color)}"></span><span class="nm">${it.name}<span class="dp">${DEPTS[it.dept].name}</span></span><span class="ck">${got ? '✓' : ''}</span></div>`;
+          return `<div class="row${got ? ' got' : ''}"><img class="di" src="${deptIconURL(it.dept)}" alt=""><span class="nm">${it.name}<span class="dp" style="color:${hex(DEPTS[it.dept].color)}">${DEPTS[it.dept].name}</span></span><span class="ck">${got ? '✓' : ''}</span></div>`;
         }).join('');
         return `<div class="ord${isReady ? ' ready' : ''}"><div class="oh"><b>${o.tag}</b> ${o.customer} · ${o.drop.name}<span>$${o.tip}</span></div>${d.mode === 'cart' || isReady ? rows : ''}</div>`;
       }).join('');
@@ -303,7 +318,7 @@ function updateHud(dt) {
     } else if (ready.length && !Object.keys(need).length) obj = `All set! Get to your car · <b>${d.spot.area}</b>`;
     else if (Object.keys(need).length) {
       const id = Object.keys(need)[0], p = PRODUCT[id];
-      obj = `Find <b>${p.name}</b> · ${DEPTS[p.dept].name}${ready.length ? ` · or go: <b>${ready.map((o) => o.tag).join('+')}</b> ready` : ''}`;
+      obj = `Find <b>${p.name}</b> · <img class="dii" src="${deptIconURL(p.dept)}" alt="">${DEPTS[p.dept].name}${ready.length ? ` · or go: <b>${ready.map((o) => o.tag).join('+')}</b> ready` : ''}`;
     } else obj = open ? 'Take an order: <b>O</b> / 📋' : 'Board empty';
     if (h.obj.innerHTML !== obj) h.obj.innerHTML = obj;
     h.speed.textContent = d.mode === 'car' ? `${Math.round(Math.abs(B.speed) * 3.6)} km/h` : '';
@@ -324,13 +339,25 @@ function updateHud(dt) {
       if (Math.abs(R.y - B.y) > 1.6) continue;
       const toward = Math.cos(Math.atan2(dx, dz) - R.heading); // 1: pointed straight at you
       const closing = (Math.sin(R.vh) * R.speed * dx + Math.cos(R.vh) * R.speed * dz) / dist;
-      if ((r.hunting === d.i && dist < COMBAT.HOSTILE_R) || (r.rushT > 0 && toward > 0.85 && dist < COMBAT.HOSTILE_R) || (r.mode === 'car' && closing > 9 && toward > 0.9 && dist < 22)) { who = r; break; }
+      if ((r.hunting === d.i && dist < COMBAT.HOSTILE_R) || (r.smashT > 0 && toward > 0.85 && dist < COMBAT.HOSTILE_R) || (r.mode === 'car' && closing > 9 && toward > 0.9 && dist < 22)) { who = r; break; }
     }
     if (who) { if (H.t <= -1) play('warn'); H.t = Math.max(H.t, 1.4); H.who = who; view.mood(d, 'onfire', 0.3); }
     H.t = d.mode === 'car' ? -2 : H.t - dt;
     const on = H.t > 0;
     h.hostile.classList.toggle('hidden', !on);
     if (on) h.hostile.querySelector('span').textContent = `${H.who.name}${H.who.mode === 'car' ? ' (in a car!)' : ''}`;
+    // your car off screen with an order ready: an arrow on the edge of your pane pointing at it
+    const C = d.car, pr = view.project(k, C.x, C.y + 1, C.z);
+    const off = pr.behind || Math.abs(pr.x) > 0.92 || Math.abs(pr.y) > 0.88;
+    const show = d.mode === 'cart' && M.phase === 'play' && ready.length > 0 && off;
+    h.arrow.classList.toggle('hidden', !show);
+    if (show) {
+      const m = Math.max(Math.abs(pr.x) / 0.84, Math.abs(pr.y) / 0.74, 1e-3), ex = pr.x / m, ey = pr.y / m;
+      const W = h.el.clientWidth, Hh = h.el.clientHeight;
+      h.arrow.style.left = `${(ex * 0.5 + 0.5) * W}px`; h.arrow.style.top = `${(-ey * 0.5 + 0.5) * Hh}px`;
+      h.arrow.firstElementChild.style.transform = `rotate(${Math.atan2(-pr.y * Hh, pr.x * W)}rad)`;
+      h.arrow.lastElementChild.textContent = `🚗 YOUR CAR · ${Math.round(Math.hypot(C.x - B.x, C.z - B.z))} m`;
+    }
   });
   // touch sticks
   input.sticks.forEach((s, i) => {
@@ -426,12 +453,12 @@ function showTitle() {
       <ul>
         <li>Take up to <b>3 orders</b> off the board. Each needs a few items from Produce, Paper Goods (toilet paper), Hardware (plungers), Toys, Home &amp; Carpet and the Garden Center.</li>
         <li>The store's <b>layout changes every shift</b>: your list names the department, the signs and the directory by the door tell you where it is. Two floors, ramps, and an outdoor yard.</li>
-        <li>Roll past a shelf to grab what you need. <b>Rush</b> or <b>punch</b> rival dashers: a punch steals an item you need from their cart, otherwise their stuff spills on the floor.</li>
+        <li>Roll past a shelf to grab what you need. <b>SMASH</b> rival dashers (a lunge with your cart): it steals an item you need from their cart, otherwise their stuff spills on the floor.</li>
         <li><b>Grind</b> the railings, handrails and checkout ledges (hop onto them), and hit the <b>kickers</b> — hop at the lip of the one upstairs to fly off the upper floor. Tricks fill your <b>SLO-MO</b> meter; hold it for bullet time.</li>
         <li>Order complete? Find <b>your car</b> (outdoor lot, indoor garage, or the garage roof over the skybridge) and drive it to the drop-off. First to deliver gets the tip — everyone else is <b>poached</b>. Most money wins.</li>
       </ul>
-      <b>Controls</b> — stick / WASD / arrows: go that way · Space: hop · Shift: rush · F: punch / steal · X (hold): slow-mo · O: order board · C: camera · Esc: pause.
-      Two players: P1 WASD + Space / left Shift / F / R, P2 arrows + Enter / right Shift / "/" / '. Pads: A hop, B rush, X punch, LB slow-mo, Back board.
+      <b>Controls</b> — stick / WASD / arrows: go that way · Space: hop · Shift or F: SMASH · X (hold): slow-mo · O: order board · C: camera · Esc: pause.
+      Two players: P1 WASD + Space / left Shift / R, P2 arrows + Enter / right Shift / '. Pads: A hop, B or X smash, LB slow-mo, Back board.
     </div>
   </div>`);
   s.querySelector('[data-go]').onclick = () => { sfx.unlock(); play('ui'); startMatch(); };
@@ -444,11 +471,12 @@ function showTitle() {
   });
 }
 
-// The order board: at the start (blocking, with a timer) and mid-shift (an overlay; the game keeps going).
+// The order board: at the start (blocking, with a timer; CPUs only take orders once the shift starts) and
+// mid-shift (an overlay that holds the world still, so no one poaches while you browse).
 function showBoard(start = false) {
   state.boardOpen = true; state.boardStart = start;
   const s = screen(`<div class="card board"><h2>${start ? 'ORDER BOARD' : 'ORDERS'}</h2>
-    <p>${start ? `Take up to ${MATCH.STACK} orders — the store's been rearranged, so check the directory by the door.` : `Up to ${MATCH.STACK} at a time. Whoever delivers first gets the tip.`}</p>
+    <p>${start ? `Take up to ${MATCH.STACK} orders — the store's been rearranged, so check the directory by the door.` : `Up to ${MATCH.STACK} at a time. Whoever delivers first gets the tip. (The shift is on hold while you look.)`}</p>
     <div class="orders"></div>
     ${start ? `<div class="timer"><i></i></div><div class="row2">${state.locals.map((i) => `<button class="btn green" data-ready="${i}">${state.locals.length > 1 ? state.M.dashers[i].name + ' ' : ''}READY</button>`).join('')}</div>` : '<button class="btn ghost" data-close>BACK TO THE AISLES</button>'}
   </div>`);
@@ -465,7 +493,7 @@ function refreshBoard() {
   state.boardSig = sig;
   el.innerHTML = M.board.map((o) => {
     const takers = M.dashers.filter((d) => d.orders.includes(o.i));
-    const items = o.items.map((it) => `<span class="chip"><i style="background:${hex(it.color)}"></i>${it.name}<em>${DEPTS[it.dept].name}</em></span>`).join('');
+    const items = o.items.map((it) => `<span class="chip"><img src="${deptIconURL(it.dept)}" alt="">${it.name}<em style="color:${hex(DEPTS[it.dept].color)}">${DEPTS[it.dept].name}</em></span>`).join('');
     const btns = state.locals.map((li) => {
       const d = M.dashers[li], has = d.orders.includes(o.i);
       return `<button class="take${has ? ' on' : ''}" data-o="${o.i}" data-d="${li}" ${o.status !== 'open' || d.mode !== 'cart' || (!has && d.orders.length >= MATCH.STACK) ? 'disabled' : ''} style="--c:${hex(d.color)}">${has ? '✓ ' : '+ '}${state.locals.length > 1 ? d.name : has ? 'TAKEN' : 'TAKE'}</button>`;
