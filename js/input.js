@@ -10,14 +10,15 @@
 //     In the chase camera the same keys steer like a car: ←/→ turn, ↑ go, ↓ brake / back up.
 //   * pads: pad 1 is P1, pad 2 is P2 — left stick or d-pad, A hops, B rushes, X punches, Y switches the camera,
 //     Back opens the order board, Start pauses.
-//   * touch (one player): HOP, RUSH and PUNCH buttons on the right.
+//   * slow-mo (hold): X (P2: ') / pad LB or LT / the SLO-MO button — spends the style meter your tricks fill.
+//   * touch (one player): HOP, RUSH, PUNCH and SLO-MO buttons on the right.
 //
 // Robustness (docs/04 of the template): a new touch always takes the stick, listen for pointercancel and
 // lostpointercapture, reset on blur / visibilitychange.
-const KEYS1 = { up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], hop: ['Space'], rush: ['ShiftLeft', 'ShiftRight', 'KeyK'], punch: ['KeyF', 'KeyE', 'KeyJ'] };
+const KEYS1 = { up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], hop: ['Space'], rush: ['ShiftLeft', 'ShiftRight', 'KeyK'], punch: ['KeyF', 'KeyE', 'KeyJ'], slow: ['KeyX', 'KeyL'] };
 const KEYS2P = [
-  { up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], hop: ['Space'], rush: ['ShiftLeft', 'KeyQ'], punch: ['KeyF', 'KeyE'] },
-  { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], hop: ['Enter', 'NumpadEnter'], rush: ['ShiftRight', 'Period', 'Numpad1'], punch: ['Slash', 'Numpad0', 'ControlRight'] },
+  { up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], hop: ['Space'], rush: ['ShiftLeft', 'KeyQ'], punch: ['KeyF', 'KeyE'], slow: ['KeyR', 'KeyX'] },
+  { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], hop: ['Enter', 'NumpadEnter'], rush: ['ShiftRight', 'Period', 'Numpad1'], punch: ['Slash', 'Numpad0', 'ControlRight'], slow: ['Quote', 'Numpad2'] },
 ];
 const ACTIONS = ['hop', 'rush', 'punch'];
 const R = 62, DEAD = 8;
@@ -86,7 +87,7 @@ export class Input {
   // An on-screen button for player 1 (touch): fires on pointerdown, never reaches the canvas.
   bindButton(el, action) {
     el.style.touchAction = 'none';
-    el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); if (this.enabled) this[action][0] = true; el.classList.add('down'); });
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); if (this.enabled && this[action]) this[action][0] = true; el.classList.add('down'); });
     for (const t of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(t, () => el.classList.remove('down'));
   }
 
@@ -114,7 +115,7 @@ export class Input {
       const gp = this.players === 1 ? pads[0] : pads[i];
       if (gp) {
         const down = (b) => { const q = gp.buttons[b]; return !!q && (q.pressed || q.value > 0.5); };
-        const now = { a: down(0), b: down(1) || down(7), x: down(2), y: down(3), back: down(8), start: down(9) }, was = this.padPrev[i];
+        const now = { a: down(0), b: down(1) || down(7), x: down(2), y: down(3), back: down(8), start: down(9), slow: down(4) || down(6) }, was = this.padPrev[i];
         if (now.a && !was.a) jump = true;
         if (now.b && !was.b) rush = true;
         if (now.x && !was.x) punch = true;
@@ -127,7 +128,8 @@ export class Input {
       }
       const st = this.stick(i);
       if (st) dir = st; // (touch wins)
-      out.push({ dir, keys: kx || ky ? { x: kx, y: ky } : null, jump, rush, punch, touch: !!st });
+      const slow = has(K.slow) || !!this.padPrev[i]?.slow || (i === 0 && !!this.slowBtn?.classList.contains('down'));
+      out.push({ dir, keys: kx || ky ? { x: kx, y: ky } : null, jump, rush, punch, slow, touch: !!st });
     }
     return out;
   }

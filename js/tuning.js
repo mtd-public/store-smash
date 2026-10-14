@@ -44,6 +44,7 @@ export const HANDLING = {
     WALL_MARGIN: 0.42, // m kept from walls round each circle
     MASS: 1,
     PICK_R: 1.7,       // m from a shelf slot that grabs the item (you reach out as you roll past)
+    GRIND: true,       // carts grind rails (railing tops, handrails, ledges)
   },
   // A dasher's hatchback. Same controller: faster, heavier, drifts (low grip), and it can't spin on the spot.
   car: {
@@ -109,6 +110,24 @@ export const COMBAT = {
   GUARD_THIEF: 2,      // s a thief can't be robbed back (otherwise two dashers needing one item trade it forever)
   LOOSE_WAIT: 0.5,     // s before a spilled item can be picked up (the victim waits LOOSE_WAIT × 2)
   HOSTILE_R: 9,        // m: a rival this close, coming your way, raises the warning banner
+};
+
+// Slow-mo (Dr. Mow's slow-mo meter): tricks fill a style meter; hold SLO-MO to spend it and the whole world
+// runs at SCALE. Sick moments (a kicker launch, a rail grab off a hop, a big drop) also drop into a short burst
+// of bullet time on their own.
+export const SLOWMO = {
+  SCALE: 0.4,       // the world at 40% while you hold it: lines up a rail, a gap, a steal
+  AUTO: 0.35,       // the automatic burst's speed…
+  AUTO_TIME: 0.75,  // …and how long it lasts (real seconds)
+  AUTO_GAP: 2.5,    // s between automatic bursts (so a grind combo doesn't crawl)
+  DRAIN: 0.3,       // meter per real second held: a full meter lasts ~3.3 s
+  MAX: 2,           // banks up to 200% (Dr. Mow)
+  START: 0.5,
+  MIN: 0.08,        // can't start on less than this
+  GRIND: 0.3,       // meter per second grinding
+  AIR: 0.25,        // for a big air (over 0.8 s off the ground)
+  DROP: 0.4,        // for a drop of over 3 m (off the upper floor)
+  STEAL: 0.25, SMASH: 0.3,
 };
 
 // Camera (Dr. Mow's isometric diorama, pulled out further in the car).

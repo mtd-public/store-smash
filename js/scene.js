@@ -83,7 +83,7 @@ function makeMaterials(T) {
     grass: lam({ map: T.grass }), pavers: lam({ map: T.pavers }), plaza: lam({ map: T.plaza }), concrete: lam({ map: T.concrete }), deck: lam({ map: T.concrete }),
     wall: lam({ map: T.wall }), wallTop: lam(), roof: lam({ map: T.roofTop }), glass: new THREE.MeshLambertMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.32, depthWrite: false }),
     shelf: lam({ map: T.shelf }), shelfTop: lam(), rack: lam({ map: T.wood }), rackTop: lam({ map: T.wood }), bin: lam({ map: T.wood }), binTop: lam(), bench: lam({ map: T.wood }),
-    counter: lam(), rail: lam(), travelator: lam({ map: T.travelator }), fence: lam({ map: T.fence, alphaTest: 0.5, side: THREE.DoubleSide }),
+    counter: lam(), rail: lam(), curb: lam({ map: T.sidewalk }), travelator: lam({ map: T.travelator }), fence: lam({ map: T.fence, alphaTest: 0.5, side: THREE.DoubleSide }),
     house: lam({ map: T.house }), apartment: lam({ map: T.apartment }), tower: lam({ map: T.towers }), roofFlat: lam(),
     water: lam({ map: T.water, emissive: 0x0a2a3a }), hedge: lam({ map: T.hedge }), stunt: lam({ map: T.stunt }),
   };
@@ -183,6 +183,7 @@ export class View {
       level.add(mesh);
     }
     this.buildMarkings(level);
+    this.buildRails(level);
     this.buildDecor(level, rng);
     this.buildSigns(level);
     seeThroughGroup(level); // (after every level mesh is in: they all get the veil; dashers never do)
@@ -210,6 +211,21 @@ export class View {
     }
     const mk = (arr, color) => { if (!arr.length) return; const m = new THREE.Mesh(MD.merge(arr), new THREE.MeshLambertMaterial({ color, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2 })); m.receiveShadow = true; level.add(m); };
     mk(white, 0xffffff); mk(yellow, 0xf2c14e);
+  }
+
+  // Grind rails: shiny tubes along every railing top, handrail and ledge.
+  buildRails(level) {
+    const tube = new THREE.CylinderGeometry(0.05, 0.05, 1, 6), parts = [];
+    for (const r of this.L.rails) {
+      const dx = r.x1 - r.x0, dy = r.y1 - r.y0, dz = r.z1 - r.z0, len = Math.hypot(dx, dy, dz);
+      const g = MD.part(tube, 0xd8e2ee, [0, 0, 0], [0, 0, 0], [1, len, 1]);
+      g.applyMatrix4(_m4.compose(_v.set((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2 + 0.03, (r.z0 + r.z1) / 2), _q.setFromUnitVectors(_w.set(0, 1, 0), new THREE.Vector3(dx, dy, dz).normalize()), _s.set(1, 1, 1)));
+      parts.push(g);
+    }
+    if (!parts.length) return;
+    const m = new THREE.Mesh(MD.merge(parts), new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x334455 }));
+    m.castShadow = true;
+    level.add(m);
   }
 
   buildDecor(level, rng) {
@@ -339,6 +355,11 @@ export class View {
     const M = this.Mt;
     if (!M || !this.ds) return;
     const v = this.ds.find((q) => q.d === e.d);
+    const R = { pick: ['joy', 0.7], deliver: ['joy', 2.5], poached: ['cry', 2.5], swing: ['fired', 0.4], trick: ['joy', 0.9], dropOrder: ['cry', 1.2] }[e.type];
+    if (R && e.d) this.react(e.d, ...R);
+    if (e.type === 'steal') { this.react(e.d, 'fired', 1); this.react(e.from, 'onfire', 1.6); }
+    if (e.type === 'hit') { this.react(e.d, 'shock', 0.35); if (e.by) this.react(e.by, 'joy', 0.9); }
+    if (e.type === 'bonk' || e.type === 'crash') { const o = this.ds.find((q) => bodyOf(q.d) === e.B); if (o) this.react(o.d, 'stress', 0.6); }
     if (e.type === 'pick' && v?.shop) {
       const from = e.loose ? { x: e.loose.x, y: e.loose.y, z: e.loose.z } : this.L.slots[e.slot];
       this.fly(e.id, from, v);
@@ -495,6 +516,10 @@ export class View {
         S.body.rotation.y = lunge * 0.5;
         const sig = JSON.stringify(d.bag); // (the cart's load shows the dasher's bag)
         if (sig !== v.bagSig) { v.bagSig = sig; this.fillCart(S, d.bag); }
+        S.face.set(this.faceFor(v, d, cart, t, dt));
+        // a grind: sparks off the wheels, and the shopper rides it crouched
+        if (cart.grind && Math.random() < 0.5) this.fx.burst(cart.x - Math.sin(cart.heading) * 0.2, cart.y + 0.05, cart.z - Math.cos(cart.heading) * 0.2, 1, Math.random() < 0.5 ? 0xffe066 : 0xffffff, 2.5);
+        S.body.position.y = cart.grind ? -0.12 : 0;
       }
       // dazed: stars round the head
       v.stars.visible = d.stunT > 0;
@@ -511,6 +536,25 @@ export class View {
       v.tag.position.set(B.x, B.y + (d.mode === 'car' ? 2.8 : 2.3), B.z);
     }
   }
+  // Which cartoon face (js/faces.js, Dr. Mow's set) a dasher wears right now.
+  faceFor(v, d, B, t, dt) {
+    v.reactT = Math.max(0, (v.reactT || 0) - dt);
+    const flip = (a, b, hz = 3) => (Math.floor(t * hz) % 2 ? a : b);
+    if (v.reactT > 0 && (v.react === 'shock' || v.react === 'onfire')) return v.react === 'onfire' ? flip('aghast', 'seethe', 2.5) : 'shock';
+    if (d.stunT > 0) return 'dizzy';
+    if (v.reactT > 0) return v.react === 'onfire' ? flip('aghast', 'seethe', 2.5) : v.react;
+    if (v.moodT > t) return v.mood === 'onfire' ? flip('aghast', 'seethe', 2.5) : v.mood;
+    if (B.grind) return flip('fired', 'joy', 2);
+    if (d.rushT > 0 || d.punchT > 0) return 'fired';
+    if (!B.grounded && B.airT > 0.3) return B.vy < -7 ? flip('aghast', 'shock', 6) : 'joy';
+    if (d.hunting >= 0) return 'seethe';
+    return (t + d.i * 1.7) % 3.4 < 0.14 ? 'blink' : 'normal';
+  }
+  faceNow(d) { const v = this.ds?.find((q) => q.d === d); return v?.shop?.face.now ?? (v ? this.faceFor(v, d, d.cart, performance.now() / 1000, 0) : 'normal'); }
+  // A reaction for a moment (events) — 'onfire' flips aghast / seethe like Dr. Mow on fire.
+  react(d, name, secs) { const v = this.ds?.find((q) => q.d === d); if (v) { v.react = name; v.reactT = secs; } }
+  // A standing mood until `until` (performance seconds) — the hostile warning, for example.
+  mood(d, name, secs) { const v = this.ds?.find((q) => q.d === d); if (v) { v.mood = name; v.moodT = performance.now() / 1000 + secs; } }
   fillCart(S, bag) {
     for (const m of S.items) if (m) S.load.remove(m);
     S.items = [];
@@ -628,7 +672,7 @@ function xrayMat(color) {
 }
 function xray(root, color) {
   const meshes = [];
-  root.traverse((o) => { if (o.isMesh && !o.userData.xray) meshes.push(o); });
+  root.traverse((o) => { if (o.isMesh && !o.userData.xray && !o.userData.face) meshes.push(o); });
   for (const o of meshes) {
     const twin = new THREE.Mesh(o.geometry, xrayMat(color));
     twin.userData.xray = true; twin.renderOrder = 1; twin.frustumCulled = false;

@@ -14,7 +14,7 @@ export const F2 = 5.15;         // the store's upper floor and the garage roof d
 const SLAB = 0.45;              // floor slab thickness
 const WALL_TOP = 10.5;          // store parapet
 const DOOR_TOP = G + 3.4;       // door / glass height
-const RAIL = 1.6;               // railing height: above a cart's hop + step (1.17 + 0.35), so nobody ends up standing on one
+const RAIL = 1.1;               // railing height. Every railing's top is a grind rail (L.rails): hop onto it and you grind, never stand on it
 export const PITCH = 100;       // city block pitch: 86 m blocks, 14 m roads
 export const HALF = 43;         // half a block
 export const CITY = 2;          // blocks run -CITY..CITY
@@ -44,7 +44,7 @@ const MAP = [
 ];
 
 export function buildLevel() {
-  const L = { plats: [], posts: [], decor: [], signs: [], slots: [], deptZones: {}, carSpots: [], starts: [], addresses: [], navRegions: [], zones: {}, streets: { EW, NS } };
+  const L = { plats: [], posts: [], decor: [], signs: [], slots: [], deptZones: {}, carSpots: [], starts: [], addresses: [], navRegions: [], zones: {}, streets: { EW, NS }, rails: [] };
   const rng = mulberry32(20261013); // the static world (parked cars, house colours) is the same every match
   const P = (o) => { L.plats.push(o); return o; };
   // An edge-based box (Dr. Mow's `box` helper): x0..x1, z0..z1, top, thickness (or { bot }).
@@ -55,6 +55,12 @@ export function buildLevel() {
   const post = (x, z, r, y0, y1, kind, extra = {}) => { const q = { x, z, r, y0, y1, kind, ...extra }; L.posts.push(q); return q; };
   const decor = (o) => { L.decor.push(o); return o; };
   const sign = (text, x, y, z, rot, w, h, bg, fg = '#ffffff', extra = {}) => L.signs.push({ text, x, y, z, rot, w, h, bg, fg, ...extra });
+  // A grind rail (Dr. Mow's rails, with a slope): from (x0, y0, z0) to (x1, y1, z1). `solid`: a thin barrier
+  // under it to the floor (a freestanding rail); railings and ledges already have their own box.
+  const rail = (x0, y0, z0, x1, y1, z1, solid = null) => {
+    L.rails.push({ x0, y0, z0, x1, y1, z1 });
+    if (solid != null) { const along = Math.abs(x1 - x0) > Math.abs(z1 - z0); box(along ? Math.min(x0, x1) : x0 - 0.06, along ? Math.max(x0, x1) : x0 + 0.06, along ? z0 - 0.06 : Math.min(z0, z1), along ? z0 + 0.06 : Math.max(z0, z1), Math.max(y0, y1), Math.max(y0, y1) - solid, 'rail', 0x9fb4c8, { hidden: true }); }
+  };
   // A wall from the floor up, split at door height: the part above is tagged so the renderer can cut it away.
   const wall = (x0, x1, z0, z1, mat = 'wall', color = 0xf3eadb, tag = 'storeUpper') => {
     box(x0, x1, z0, z1, DOOR_TOP, DOOR_TOP, mat, color, { solid: true });
@@ -62,7 +68,7 @@ export function buildLevel() {
   };
   const lintel = (x0, x1, z0, z1, bot = DOOR_TOP, top = WALL_TOP, tag = 'storeUpper', color = 0xf3eadb) => box(x0, x1, z0, z1, top, top - bot, 'wall', color, { tag, solid: true });
 
-  buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel, rng });
+  buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel, rng, rail });
   buildCity(L, { box, floor, ramp, post, decor, sign, rng });
 
   // Nav sampling: dense on the store block (both floors, ramps, garage levels), coarse over the city.
@@ -72,7 +78,7 @@ export function buildLevel() {
 }
 
 // ---------------------------------------------------------------- the store block (0, 0)
-function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel, rng }) {
+function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel, rng, rail }) {
   // Ground partition (no two floors overlap, so nothing z-fights):
   floor(-43, 43, -43, -40, G, 'sidewalk', 0xd9d4cc);           // sidewalk ring
   floor(-43, 43, 40, 43, G, 'sidewalk', 0xd9d4cc);
@@ -117,6 +123,15 @@ function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel,
   box(-27.5, -24, -14, -13.85, F2 + RAIL, RAIL, 'rail', 0x9fb4c8);
   box(12, 15.5, -14, -13.85, F2 + RAIL, RAIL, 'rail', 0x9fb4c8);
   for (const x of [-26, 14]) post(x, -13.9, 0.3, 0, F2 - SLAB, 'column'); // landing columns
+  // grind rails along every railing top: the upper floor's edge, and down both travelator handrails (they chain:
+  // ride the landing rail straight on down the handrail to the ground floor)
+  rail(-24, F2 + RAIL, -18.075, 12, F2 + RAIL, -18.075);
+  rail(-27.5, F2 + RAIL, -13.925, -24, F2 + RAIL, -13.925); rail(-24, F2 + RAIL, -13.925, -10, G + RAIL, -13.925);
+  rail(15.5, F2 + RAIL, -13.925, 12, F2 + RAIL, -13.925); rail(12, F2 + RAIL, -13.925, -2, G + RAIL, -13.925);
+  // kickers: one in the front hall launches you west along the produce bins; one upstairs launches you over the
+  // edge rail and down into the front hall (hop at the lip for the big one)
+  ramp(-10.4, -7.6, -11.6, -9.6, 'x', G + 0.9, G, 'stunt', 0xffffff);
+  ramp(-8.5, -3.5, -22.5, -19.5, 'z', F2, F2 + 0.9, 'stunt', 0xffffff);
   for (const x of [-20, -6, 2, 10]) post(x, -18.6, 0.3, 0, F2 - SLAB, 'column'); // mezzanine columns along its edge
 
   // --- department zones. The fixtures are fixed; which department fills which zone is shuffled every match
@@ -155,7 +170,8 @@ function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel,
   L.floorSigns = [{ x: -17, y: 3.2, z: -13.8, w: 9, h: 0.9, floor: 'U' }, { x: 5, y: 3.2, z: -13.8, w: 9, h: 0.9, floor: 'U' }];
   L.directory = { x: -14.6, y: G + 1.5, z: -3.6, w: 3.6, h: 2.6 }; // the store directory, just inside the doors
   // checkouts (in the way, like real ones)
-  for (const x of [4, 8, 12]) { box(x - 0.5, x + 0.5, -10, -6.4, G + 1, 1, 'counter', 0x3b4a66); decor({ type: 'register', x, y: G + 1, z: -9.2 }); }
+  for (const x of [4, 8, 12]) { box(x - 0.5, x + 0.5, -10, -6.4, G + 1, 1, 'counter', 0x3b4a66); decor({ type: 'register', x, y: G + 1, z: -9.2 }); rail(x - 0.45, G + 1, -10, x - 0.45, G + 1, -6.4); rail(x + 0.45, G + 1, -10, x + 0.45, G + 1, -6.4); } // (their edges are ledges to grind)
+  rail(2.3, G + 0.75, -10.5, 2.3, G + 0.75, -5.4, G); // a queue rail by the checkouts
   sign('CHECKOUT', 8, 4.2, -8.2, 0, 6, 1, '#2b3a55', '#ffe066', { hang: true });
 
   // --- outdoor yard: fenced, door from the front hall's west wall, gate to the lot
@@ -164,6 +180,7 @@ function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel,
   box(-40, -36, -4.15, -4, FENCE, FENCE, 'fence', 0x2f8a55); box(-31, -28, -4.15, -4, FENCE, FENCE, 'fence', 0x2f8a55);
   for (const [z0, z1] of [[-37, -29], [-25, -17]]) {
     box(-35, -33, z0, z1, G + 0.9, 0.9, 'bench', 0x9a6b42, { zone: 'YARD' });
+    rail(-34.95, G + 0.9, z0, -34.95, G + 0.9, z1); rail(-33.05, G + 0.9, z0, -33.05, G + 0.9, z1); // bench edges: ledges
     for (const side of [-1, 1]) for (let k = 0; k < 3; k++) {
       const z = z0 + 1.4 + k * ((z1 - z0 - 2.8) / 2);
       L.deptZones.YARD.slots.push(L.slots.push({ zone: 'YARD', x: -34 + side * 0.5, y: G + 0.9, z, at: { x: -34 + side * 2.4, y: G, z }, face: side * Math.PI / 2, table: true }) - 1);
@@ -187,6 +204,7 @@ function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel,
   for (const z of [-34, -24, -14]) post(33.5, z, 0.45, 0, F2 - 0.5, 'column');
   floor(16, 20, -34, -28, F2, 'deck', 0xc9c4d6, { thick: 0.5, tag: 'bridge' });                    // skybridge
   box(16, 20, -34.15, -34, F2 + RAIL, RAIL, 'rail', 0x9fb4c8); box(16, 20, -28, -27.85, F2 + RAIL, RAIL, 'rail', 0x9fb4c8);
+  rail(16, F2 + RAIL, -34.075, 20, F2 + RAIL, -34.075); rail(16, F2 + RAIL, -27.925, 20, F2 + RAIL, -27.925);
   decor({ type: 'canopy', x: 18, z: -31, y: F2 + 3.3, w: 4.4, d: 6.6 });
   sign('PARKING', 30, F2 + 2.2, 4.1, 0, 6, 1.2, '#2f6fd6', '#fff');
   sign('P1 · INDOOR PARKING', 30, 3.6, 4.15, 0, 7, 0.8, '#2b3a55', '#fff');
@@ -195,6 +213,12 @@ function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel,
 
   // --- front plaza: bollards keep cars out of the entrance (carts slip between)
   for (const x of [-11.6, -9.6, -7.6, -5.6, -3.6, -1.6, 0.4]) post(x, 3.2, 0.28, 0, G + 1, 'bollard');
+  rail(-26.5, G + 0.75, 1.2, -15, G + 0.75, 1.2, G); rail(10, G + 0.75, 1.2, 15.5, G + 0.75, 1.2, G); // plaza rails
+  // bollards at every other way in, so cars stay out of the store (carts slip between): the side door from the
+  // garage walkway, the yard gate, and across the skybridge
+  for (const z of [-11.4, -9.8, -8.2, -6.6]) post(17, z, 0.25, 0, G + 1, 'bollard');
+  for (const x of [-35.2, -33.6, -32]) post(x, -3.6, 0.25, 0, G + 1, 'bollard');
+  for (const z of [-33.2, -31.7, -30.2, -28.7]) post(19.2, z, 0.25, F2 - 0.1, F2 + 1, 'bollard');
   decor({ type: 'corral', x: 6, y: G, z: 1, w: 5, d: 1.8 });
   box(3.5, 8.5, 0.1, 1.9, G + 1.1, 1.1, 'rail', 0x9fb4c8, { hidden: true }); // (the corral's collision)
   for (let i = 0; i < 6; i++) L.starts.push({ x: -9.6 + i * 1.44, y: G, z: 0.6, heading: Math.PI }); // lined up at the doors
@@ -204,13 +228,18 @@ function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel,
   const row = (z0, z1, heading) => { for (let x = -37.6; x <= 37.7; x += 2.8) stalls.push({ x, z: (z0 + z1) / 2, heading, z0, z1 }); };
   row(7, 12, 0); row(20, 25, Math.PI); row(25, 30, 0);
   decor({ type: 'stalls', list: stalls.map((s) => ({ x: s.x, z: s.z, z0: s.z0, z1: s.z1 })) });
+  // curb islands behind the stall rows (cars keep to the lanes; 2 m gaps let carts through)
+  for (const z of [7, 25]) {
+    let x0 = -38.6;
+    for (const gap of [-19.4, 0.2, 19.8, 40]) { if (gap - 1 > x0) box(x0, Math.min(38.6, gap - 1), z - 0.2, z + 0.2, G + 0.5, 0.5, 'curb', 0xcfc9bf); x0 = gap + 1; }
+  }
   const spots = [
     { x: -18.4, y: G, z: 9.5, heading: 0, area: 'Outdoor lot (front row)' },
     { x: 15.2, y: G, z: 27.5, heading: 0, area: 'Outdoor lot (back row)' },
     { x: 23.2, y: G, z: -19, heading: Math.PI / 2, area: 'Garage level 1 (indoor)' },
     { x: 23.2, y: G, z: -6, heading: Math.PI / 2, area: 'Garage level 1 (indoor)' },
-    { x: 23.2, y: F2, z: -21, heading: Math.PI / 2, area: 'Garage roof (skybridge)' },
-    { x: 23.2, y: F2, z: -10, heading: Math.PI / 2, area: 'Garage roof (skybridge)' },
+    { x: 23.8, y: F2, z: -21, heading: Math.PI / 2, area: 'Garage roof (skybridge)' },
+    { x: 23.8, y: F2, z: -10, heading: Math.PI / 2, area: 'Garage roof (skybridge)' },
   ];
   L.carSpots.push(...spots);
   const near = (x, z, y) => spots.some((s) => Math.abs(s.y - y) < 1 && Math.abs(s.x - x) < 5.2 && Math.abs(s.z - z) < 5.2);
@@ -224,9 +253,10 @@ function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel,
   for (const s of stalls) if (!near(s.x, s.z, G) && rng() < 0.42) parked(s.x, G, s.z, s.heading);
   for (let z = -37; z <= 1; z += 2.9) { // garage stalls along the west side, both levels
     if (!near(23.2, z, G) && rng() < 0.55) parked(23.2, G, z, Math.PI / 2);
-    if (!(z > -35.5 && z < -26.5) && !near(23.2, z, F2) && rng() < 0.45) parked(23.2, F2, z, Math.PI / 2);
+    if (!(z > -35.5 && z < -26.5) && !near(23.8, z, F2) && rng() < 0.45) parked(23.8, F2, z, Math.PI / 2); // (roof stalls sit 1.25 m off the parapet: a cart fits behind them)
   }
-  decor({ type: 'garageStalls', x: 23.2, z0: -37, z1: 1, step: 2.9, ys: [G, F2] });
+  decor({ type: 'garageStalls', x: 23.2, z0: -37, z1: 1, step: 2.9, ys: [G] });
+  decor({ type: 'garageStalls', x: 23.8, z0: -37, z1: 1, step: 2.9, ys: [F2] });
   for (const [x, z] of [[-39.2, 16], [39.2, 16], [-25, 25], [0.2, 25], [25.4, 25], [-20, 39.3], [20, 39.3]]) { post(x, z, 0.25, 0, 7, 'lamp'); decor({ type: 'lamp', x, y: G, z }); } // (between stalls and on the edges, never in a lane)
 }
 

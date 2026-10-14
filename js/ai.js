@@ -130,16 +130,34 @@ export function think(M, d, brain, nav, dt) {
     brain.path = findPath(N, B, T) || [{ x: T.x, y: T.y, z: T.z }];
     brain.pi = 0; brain.replanT = T.kind === 'rival' ? 0.8 : car ? 2 : 3;
   }
+  // getting nowhere? (rocking back and forth in a corner never trips the wedge check below) — every 2.5 s, if
+  // we're no closer to the target than before, count it; three in a row is stuck
+  brain.progT = (brain.progT || 0) + dt;
+  if (brain.progT > 2.5) {
+    brain.progT = 0;
+    const dNow = Math.hypot(T.x - B.x, T.z - B.z) + Math.abs(T.y - B.y) * 3;
+    if (brain.progD != null && dNow > brain.progD - 1 && T.kind !== 'rival' && !(T.kind === 'park' && dNow < MATCH.PARK_R)) brain.noProg = (brain.noProg || 0) + 1;
+    else brain.noProg = 0;
+    brain.progD = dNow;
+    if (brain.noProg >= 3) { brain.wiggle = Math.max(brain.wiggle + 1, 2 + (brain.noProg - 3) * 3); brain.unstickT = car ? 1.1 : 0.7; brain.escape = escapeDir(M, d, B, T, brain.rng); brain.path = null; }
+  }
   // stuck? (on a pillar, wedged against a parked car) — back off at an angle and hop, then replan
   brain.stuckT += dt;
   if (brain.stuckT > 1) {
     const moved = brain.lastX == null ? 9 : Math.hypot(B.x - brain.lastX, B.z - brain.lastZ);
     brain.lastX = B.x; brain.lastZ = B.z; brain.stuckT = 0;
-    if (moved < (car ? 1.6 : 0.7) && !(T.kind === 'park' && Math.hypot(T.x - B.x, T.z - B.z) < MATCH.PARK_R)) {
+    if (moved < (car ? 1.6 : 0.7) && !(T.kind === 'park' && Math.hypot(T.x - B.x, T.z - B.z) < MATCH.PARK_R && Math.abs(T.y - B.y) < 1)) {
       brain.wiggle++; brain.path = null;
       brain.unstickT = car ? 1.1 : 0.7; brain.unstickDir = brain.rng() < 0.5 ? -1 : 1;
       brain.escape = brain.wiggle > 1 ? escapeDir(M, d, B, T, brain.rng) : null; // (twice stuck: head for open floor)
-    } else brain.wiggle = 0;
+    } else if (!brain.noProg) brain.wiggle = 0;
+    // the failsafe: wedged for ~8 s, a CPU gets towed to the nearest clear spot on its map (Dr. Mow respawns too)
+    if (brain.wiggle >= 8) {
+      const n = nearestNode(N, B.x, B.y, B.z, 28);
+      if (n) { Object.assign(B, { x: n.x, y: n.y, z: n.z, speed: 0, kx: 0, kz: 0, vy: 0, grounded: true, grind: null }); M.events.push({ type: 'towed', d }); }
+      brain.wiggle = 0; brain.noProg = 0; brain.progD = null; brain.path = null; brain.unstickT = 0;
+      return { dir: null };
+    }
   }
   if (brain.unstickT > 0) {
     brain.unstickT -= dt;
@@ -159,7 +177,7 @@ export function think(M, d, brain, nav, dt) {
   const dl = Math.hypot(dx, dz) || 1;
   dx /= dl; dz /= dl;
   let mag = 0.82 + 0.18 * brain.skill;
-  const toEnd = Math.hypot(T.x - B.x, T.z - B.z);
+  const toEnd = Math.hypot(T.x - B.x, T.z - B.z) + Math.abs(T.y - B.y) * 4; // (a spot on the roof isn't 'close' from the floor below it)
   if (car) { // ease off for a sharp bend ahead, pull up gently at the drop, crawl into the parking spot
     const nxt = P[Math.min(P.length - 1, brain.pi + 1)];
     const a1 = Math.atan2(dx, dz), a2 = Math.atan2(nxt.x - aim.x, nxt.z - aim.z);

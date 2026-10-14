@@ -3,6 +3,7 @@
 // into the vertices, so static things merge into one draw call and one shared material serves them all.
 import * as THREE from 'three';
 import { mergeGeometries } from './vendor/addons/BufferGeometryUtils.js';
+import { addFaces } from './faces.js';
 
 export const VCOL = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
@@ -97,14 +98,15 @@ export function makeShopper(color) {
     part(SPH0, skin, [-0.24, 0.93, 0.46], [0, 0, 0], [0.11, 0.11, 0.11]),
     part(SPH0, skin, [0.24, 0.93, 0.46], [0, 0, 0], [0.11, 0.11, 0.11]),
   ]), VCOL);
+  // a big chibi head (Dr. Mow proportions) so the cartoon faces read from the isometric camera
   const head = new THREE.Mesh(merge([
-    part(SPH, skin, [0, 0, 0], [0, 0, 0], [0.36, 0.38, 0.36]),
-    part(CYL, color, [0, 0.12, -0.01], [0, 0, 0], [0.38, 0.14, 0.38]), // cap
-    part(BOX, color, [0, 0.07, 0.2], [0, 0, 0], [0.3, 0.03, 0.18]),     // brim
-    part(SPH0, 0x1a1a1a, [-0.08, 0.0, 0.17], [0, 0, 0], [0.05, 0.06, 0.03]),
-    part(SPH0, 0x1a1a1a, [0.08, 0.0, 0.17], [0, 0, 0], [0.05, 0.06, 0.03]),
+    part(new THREE.IcosahedronGeometry(0.5, 2), skin, [0, 0, 0], [0, 0, 0], [0.56, 0.58, 0.56]),
+    part(CYL, color, [0, 0.19, -0.02], [0, 0, 0], [0.6, 0.16, 0.6]),   // cap
+    part(BOX, color, [0, 0.13, 0.29], [0, 0, 0], [0.44, 0.04, 0.26]),  // brim
+    part(SPH0, skin, [-0.28, 0, 0], [0, 0, 0], [0.08, 0.12, 0.08]), part(SPH0, skin, [0.28, 0, 0], [0, 0, 0], [0.08, 0.12, 0.08]), // ears
   ]), VCOL);
-  head.position.set(0, 1.5, 0.08);
+  head.position.set(0, 1.62, 0.06);
+  const face = addFaces(head, 0.28, 0.58 / 0.56);
   const legGeo = merge([part(BOX, pants, [0, -0.25, 0], [0, 0, 0], [0.16, 0.5, 0.18]), part(BOX, 0xffffff, [0, -0.52, 0.05], [0, 0, 0], [0.17, 0.1, 0.28])]);
   const legL = new THREE.Mesh(legGeo, VCOL), legR = new THREE.Mesh(legGeo, VCOL);
   legL.position.set(-0.12, 0.6, 0); legR.position.set(0.12, 0.6, 0);
@@ -124,8 +126,8 @@ export function makeShopper(color) {
   cartParts.push(part(BOX, color, [0, 0.95, 0.43], [0, 0, 0], [0.5, 0.18, 0.02]));              // the dasher logo plate
   cart.add(new THREE.Mesh(merge(cartParts), VCOL));
   const load = new THREE.Group(); load.position.set(0, 0.47, 0.02); cart.add(load);
-  root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  return { root, body, head, legL, legR, cart, load, items: [] };
+  root.traverse((o) => { if (o.isMesh && !o.userData.face) o.castShadow = true; });
+  return { root, body, head, legL, legR, cart, load, items: [], face };
 }
 
 // ---------------------------------------------------------------- cars

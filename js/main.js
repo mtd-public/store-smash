@@ -7,13 +7,14 @@
 import { buildLevel, DEPTS, EDGE } from './level.js';
 import { createWorld } from './world.js';
 import { buildNav, findPath } from './nav.js';
-import { HANDLING, DT, MATCH, COMBAT } from './tuning.js';
+import { HANDLING, DT, MATCH, COMBAT, SLOWMO } from './tuning.js';
 import { createMatch, matchStep, bodyOf, standings, needs, held, readyOrders, toggle, openOrders } from './match.js';
 import { createBrain, think, objective, pickOrders } from './ai.js';
 import { View } from './scene.js';
 import { Input } from './input.js';
 import { Sfx, SFX } from './sfx-synth.js';
 import { PRODUCT } from './order.js';
+import { drawPortrait } from './faces.js';
 
 const $ = (s) => document.querySelector(s);
 const hex = (c) => '#' + c.toString(16).padStart(6, '0');
@@ -36,9 +37,10 @@ sfx.setMuted(settings.muted);
 const unlock = () => sfx.unlock();
 addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
 const play = (name, o) => { const f = SFX[name]; if (f && sfx.ctx) f(sfx, o); };
-for (const [id, a] of [['#btn-hop', 'hop'], ['#btn-rush', 'rush'], ['#btn-punch', 'punch']]) input.bindButton($(id), a);
+for (const [id, a] of [['#btn-hop', 'hop'], ['#btn-rush', 'rush'], ['#btn-punch', 'punch'], ['#btn-slow', 'slow']]) input.bindButton($(id), a);
+input.slowBtn = $('#btn-slow');
 
-const state = { mode: 'title', M: null, brains: [], locals: [], acc: 0, guideT: 0, guides: [], overT: 0, autoplay: false, panes: [], hud: [], attractK: 0, boardOpen: false, hostile: [] };
+const state = { scale: 1, autoSlowT: 0, autoGap: 0, slowing: [false, false], mode: 'title', M: null, brains: [], locals: [], acc: 0, guideT: 0, guides: [], overT: 0, autoplay: false, panes: [], hud: [], attractK: 0, boardOpen: false, hostile: [] };
 window.GAME = { state, L, nav, view, start: (o) => startMatch(o), ff, get autoplay() { return state.autoplay; }, set autoplay(v) { state.autoplay = v; } };
 
 // ---------------------------------------------------------------- matches
@@ -87,6 +89,7 @@ function simStep(first) {
       return think(M, d, state.brains[i], nav, DT);
     }
     const k = state.locals.indexOf(i), inp = frameInput[k];
+    if (k === 0 && window.GAME.force) { const f = window.GAME.force; if (f.jump) window.GAME.force = { ...f, jump: false }; return f; } // (test hook: tools/smoke.mjs drives P1 exactly)
     return inp ? toCtl(k, inp, first) : { dir: null };
   });
   matchStep(M, ctls);
@@ -131,6 +134,14 @@ function handleEvent(e) {
       else if (mine(e.by)) { play('whack'); toast(`SMASH! ${e.d.name}${e.lost.length ? ` dropped ${names(e.lost)}` : ' is seeing stars'}`, 'small', e.by); }
       break;
     case 'swing': if (mine(e.d)) play('swish'); break;
+    case 'trick':
+      if (mine(e.d)) {
+        toast(e.name, 'trick', e.d);
+        if (e.sick && state.autoGap <= 0) { state.autoSlowT = SLOWMO.AUTO_TIME; state.autoGap = SLOWMO.AUTO_GAP; play('slowIn'); }
+      }
+      break;
+    case 'grindStart': if (local(e.B)) play('clank'); break;
+    case 'launch': if (local(e.B)) play('boing'); break;
     case 'rush': if (mine(e.d)) play('boost'); break;
     case 'enter': if (mine(e.d)) { play('boost'); toast(`IN THE CAR! Deliver ${e.orders.map((o) => o.tag).join(', ')}`, 'small', e.d); } else toast(`${e.d.name} is in the car`, 'small'); break;
     case 'dropOrder': if (mine(e.d)) toast(`Order ${e.order.tag} dropped (incomplete)`, 'small', e.d); break;
@@ -158,7 +169,7 @@ function frame(now) {
   const M = state.M;
   if (M && (state.mode === 'play' || state.mode === 'title')) {
     frameInput = state.mode === 'play' ? input.read() : [];
-    state.acc += dt;
+    state.acc += dt * slowMo(dt);
     let first = true, n = 0;
     while (state.acc >= DT && n < 14) { simStep(first); first = false; state.acc -= DT; n++; }
     if (n >= 14) state.acc = 0;
@@ -175,6 +186,26 @@ function frame(now) {
   view.frame(dt, layout);
   if (state.mode === 'play' || state.mode === 'pause') updateHud(dt);
   updateSound();
+}
+
+// ---------------------------------------------------------------- slow-mo (Dr. Mow's, on a style meter)
+// Hold SLO-MO to spend your meter (tricks, steals and smashes fill it); sick moments drop into a short burst of
+// bullet time on their own. The whole world slows (CPUs too), so it's fair; the music and sound go muffled.
+function slowMo(dt) {
+  const M = state.M;
+  let manual = false;
+  if (state.mode === 'play' && M.phase === 'play') state.locals.forEach((li, k) => {
+    const d = M.dashers[li], want = !!frameInput[k]?.slow;
+    if (want && d.style > (state.slowing[k] ? 0 : SLOWMO.MIN)) { if (!state.slowing[k]) play('slowIn'); state.slowing[k] = true; d.style = Math.max(0, d.style - SLOWMO.DRAIN * dt); manual = true; }
+    else { if (state.slowing[k]) play('slowOut'); state.slowing[k] = false; }
+  });
+  state.autoSlowT -= dt; state.autoGap -= dt;
+  const target = manual ? SLOWMO.SCALE : state.autoSlowT > 0 && state.mode === 'play' ? SLOWMO.AUTO : 1;
+  state.scale += (target - state.scale) * (1 - Math.exp(-12 * dt));
+  if (Math.abs(state.scale - target) < 0.01) state.scale = target;
+  document.body.classList.toggle('slowmo', state.scale < 0.85);
+  if (sfx.ctx) sfx.setRate(state.scale < 0.99 ? state.scale : 1);
+  return state.scale;
 }
 
 // ---------------------------------------------------------------- guides (per local player)
@@ -215,16 +246,16 @@ function buildPanes(locals) {
     const el = document.createElement('div');
     el.className = 'pane' + (p.k && n > 1 ? (wide ? ' split-v' : ' split-h') : '');
     Object.assign(el.style, { left: p.x * 100 + '%', top: p.y * 100 + '%', width: p.w * 100 + '%', height: p.h * 100 + '%' });
-    el.innerHTML = `${n > 1 ? `<div class="tag" style="background:${hex(d.color)}">${d.name}</div>` : ''}<div class="list"></div>
+    el.innerHTML = `${n > 1 ? `<div class="tag" style="background:${hex(d.color)}">${d.name}</div>` : ''}<canvas class="portrait" width="128" height="128"></canvas><div class="list"><div class="lb"></div><div class="style">SLO-MO <i><b></b></i><span>${n > 1 ? (p.k ? "'" : 'R') : 'X'}</span></div></div>
       <div class="hostile hidden"><div class="stripes"></div><b>⚠ HOSTILE DASHER APPROACHING ⚠</b><span></span></div>
       <div class="objective"></div><div class="speed"></div><canvas class="minimap hidden" width="300" height="300"></canvas>`;
     if (n > 1 && p.k === 0) el.querySelector('.list').style.top = '44px';
     root.appendChild(el);
-    state.hud.push({ el, list: el.querySelector('.list'), obj: el.querySelector('.objective'), speed: el.querySelector('.speed'), map: el.querySelector('.minimap'), hostile: el.querySelector('.hostile'), sig: '' });
+    state.hud.push({ el, portrait: el.querySelector('.portrait'), faceSig: '', list: el.querySelector('.lb'), meter: el.querySelector('.style b'), obj: el.querySelector('.objective'), speed: el.querySelector('.speed'), map: el.querySelector('.minimap'), hostile: el.querySelector('.hostile'), sig: '' });
   }
   const touch = locals.length === 1 && matchMedia('(pointer: coarse)').matches;
   document.body.classList.toggle('touch', touch);
-  for (const id of ['#btn-hop', '#btn-rush', '#btn-punch']) $(id).classList.toggle('hidden', !touch);
+  for (const id of ['#btn-hop', '#btn-rush', '#btn-punch', '#btn-slow']) $(id).classList.toggle('hidden', !touch);
   $('#btn-cam').classList.toggle('hidden', !locals.length);
   $('#btn-board').classList.toggle('hidden', !locals.length);
 }
@@ -276,6 +307,10 @@ function updateHud(dt) {
     } else obj = open ? 'Take an order: <b>O</b> / 📋' : 'Board empty';
     if (h.obj.innerHTML !== obj) h.obj.innerHTML = obj;
     h.speed.textContent = d.mode === 'car' ? `${Math.round(Math.abs(B.speed) * 3.6)} km/h` : '';
+    h.meter.style.width = `${Math.min(100, (d.style / 1) * 100)}%`;
+    const face = view.faceNow(d);
+    if (face !== h.faceSig) { h.faceSig = face; drawPortrait(h.portrait.getContext('2d'), 128, face, hex(d.color)); }
+    h.meter.classList.toggle('over', d.style > 1);
     // minimap: only on the road
     h.map.classList.toggle('hidden', d.mode !== 'car');
     if (d.mode === 'car') drawMinimap(h.map, M, d, g);
@@ -291,7 +326,7 @@ function updateHud(dt) {
       const closing = (Math.sin(R.vh) * R.speed * dx + Math.cos(R.vh) * R.speed * dz) / dist;
       if ((r.hunting === d.i && dist < COMBAT.HOSTILE_R) || (r.rushT > 0 && toward > 0.85 && dist < COMBAT.HOSTILE_R) || (r.mode === 'car' && closing > 9 && toward > 0.9 && dist < 22)) { who = r; break; }
     }
-    if (who) { if (H.t <= -1) play('warn'); H.t = Math.max(H.t, 1.4); H.who = who; }
+    if (who) { if (H.t <= -1) play('warn'); H.t = Math.max(H.t, 1.4); H.who = who; view.mood(d, 'onfire', 0.3); }
     H.t = d.mode === 'car' ? -2 : H.t - dt;
     const on = H.t > 0;
     h.hostile.classList.toggle('hidden', !on);
@@ -362,6 +397,7 @@ function updateSound() {
   const B = d ? bodyOf(d) : null;
   sfx.setEngine(d && d.mode === 'car' && M.phase === 'play' ? 0.2 + 0.8 * Math.min(1, Math.abs(B.speed) / HANDLING.car.CRUISE) : 0);
   sfx.setRoll(d && d.mode === 'cart' && M.phase === 'play' ? Math.abs(B.speed) : 0, !!B?.grounded, { maxSpeed: 8, vol: 0.08 });
+  sfx.setScrape?.(!!(d && B?.grind && M.phase === 'play'));
 }
 
 // ---------------------------------------------------------------- toasts + screens
@@ -391,10 +427,11 @@ function showTitle() {
         <li>Take up to <b>3 orders</b> off the board. Each needs a few items from Produce, Paper Goods (toilet paper), Hardware (plungers), Toys, Home &amp; Carpet and the Garden Center.</li>
         <li>The store's <b>layout changes every shift</b>: your list names the department, the signs and the directory by the door tell you where it is. Two floors, ramps, and an outdoor yard.</li>
         <li>Roll past a shelf to grab what you need. <b>Rush</b> or <b>punch</b> rival dashers: a punch steals an item you need from their cart, otherwise their stuff spills on the floor.</li>
+        <li><b>Grind</b> the railings, handrails and checkout ledges (hop onto them), and hit the <b>kickers</b> — hop at the lip of the one upstairs to fly off the upper floor. Tricks fill your <b>SLO-MO</b> meter; hold it for bullet time.</li>
         <li>Order complete? Find <b>your car</b> (outdoor lot, indoor garage, or the garage roof over the skybridge) and drive it to the drop-off. First to deliver gets the tip — everyone else is <b>poached</b>. Most money wins.</li>
       </ul>
-      <b>Controls</b> — stick / WASD / arrows: go that way · Space: hop · Shift: rush · F: punch / steal · O: order board · C: camera · Esc: pause.
-      Two players: P1 WASD + Space / left Shift / F, P2 arrows + Enter / right Shift / "/". Pads: A hop, B rush, X punch, Back board.
+      <b>Controls</b> — stick / WASD / arrows: go that way · Space: hop · Shift: rush · F: punch / steal · X (hold): slow-mo · O: order board · C: camera · Esc: pause.
+      Two players: P1 WASD + Space / left Shift / F / R, P2 arrows + Enter / right Shift / "/" / '. Pads: A hop, B rush, X punch, LB slow-mo, Back board.
     </div>
   </div>`);
   s.querySelector('[data-go]').onclick = () => { sfx.unlock(); play('ui'); startMatch(); };

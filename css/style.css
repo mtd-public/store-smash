@@ -51,7 +51,8 @@ button { font-family: inherit; cursor: pointer; border: 0; }
 .pane { position: absolute; overflow: hidden; }
 .pane.split-v { border-left: 3px solid #fff; }
 .pane.split-h { border-top: 3px solid #fff; }
-.list { position: absolute; left: 10px; top: 58px; width: min(250px, 46%); background: var(--card); border-radius: 14px; padding: 8px 10px 6px; box-shadow: var(--shadow); font-size: 14px; line-height: 1.15; }
+.portrait { position: absolute; left: 10px; top: 58px; width: 64px; height: 64px; border-radius: 50%; box-shadow: var(--shadow); }
+.list { position: absolute; left: 82px; top: 58px; width: min(250px, 46%); background: var(--card); border-radius: 14px; padding: 8px 10px 6px; box-shadow: var(--shadow); font-size: 14px; line-height: 1.15; }
 .list .who { font-size: 12px; color: #6b6f80; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
 .list .who i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
 .list .row { display: flex; align-items: center; gap: 7px; padding: 3px 0; border-top: 1px dashed #e6e0d4; }
@@ -102,6 +103,20 @@ button.act.down { transform: scale(0.92); }
 #btn-rush { right: 110px; bottom: 22px; background: rgba(47, 111, 214, 0.92); color: #fff; }
 #btn-punch { right: 34px; bottom: 122px; background: rgba(232, 66, 59, 0.92); color: #fff; }
 #btn-board { font-size: 16px; }
+#btn-slow { right: 126px; bottom: 112px; width: 66px; height: 66px; font-size: 13px; background: rgba(160, 92, 240, 0.92); color: #fff; }
+#slowfx { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.2s; background: radial-gradient(ellipse at center, transparent 50%, rgba(70, 30, 140, 0.45) 100%); }
+#slowfx::before, #slowfx::after { content: ''; position: absolute; left: 0; right: 0; height: 7vh; background: #0d0a18; transition: transform 0.2s; }
+#slowfx::before { top: 0; transform: translateY(-100%); }
+#slowfx::after { bottom: 0; transform: translateY(100%); }
+body.slowmo #slowfx { opacity: 1; }
+body.slowmo #slowfx::before, body.slowmo #slowfx::after { transform: none; }
+#slowfx span { position: absolute; left: 50%; bottom: 8.5vh; transform: translateX(-50%); font-family: 'Luckiest Guy', sans-serif; font-size: 22px; color: #e9d8ff; letter-spacing: 6px; text-shadow: 0 0 12px #a05cf0; }
+body.slowmo #game { filter: saturate(1.35) contrast(1.05); }
+.list .style { margin-top: 5px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #6b6f80; }
+.list .style i { flex: 1; height: 8px; border-radius: 5px; background: #ece6da; overflow: hidden; display: block; position: relative; }
+.list .style i b { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #a05cf0, #f05aa0); border-radius: 5px; }
+.list .style i b.over { background: linear-gradient(90deg, #f2c14e, #ffe066); }
+.toast.trick { color: #ffe066; font-size: clamp(18px, 3.6vw, 34px); }
 #btn-cam { position: fixed; right: 10px; top: 60px; }
 
 /* ---- screens */
@@ -149,6 +164,8 @@ body.touch .minimap { bottom: 200px; }
   .rival .nm { display: none; }
   .pane .list { top: 92px; }
   .list { font-size: 12px; width: min(200px, 52%); top: 54px; padding: 6px 8px 4px; }
+  .portrait { width: 48px; height: 48px; top: 92px; }
+  .pane .list { left: 64px; }
   .minimap { width: 110px; height: 110px; }
   .objective { font-size: 13px; bottom: 10px; }
   .speed { right: 128px; font-size: 18px; }

@@ -12,8 +12,8 @@
 export const FLOOR = { h: 0, thick: 1, ground: true, x: 0, z: 0, w: Infinity, d: Infinity }; // the city's base (roads)
 const CELL = 8;
 
-export function createWorld({ plats = [], posts = [] } = {}) {
-  const W = { plats, posts, grid: new Map(), pgrid: new Map() };
+export function createWorld({ plats = [], posts = [], rails = [] } = {}) {
+  const W = { plats, posts, rails: prepRails(rails), grid: new Map(), pgrid: new Map() };
   plats.forEach((p) => { p.top ??= p.ramp ? Math.max(p.ramp.h0, p.ramp.h1) : p.h; p.bot ??= (p.ramp ? Math.min(p.ramp.h0, p.ramp.h1) : p.h) - p.thick; });
   for (const p of plats) insert(W.grid, p.x - p.w / 2 - 1.5, p.x + p.w / 2 + 1.5, p.z - p.d / 2 - 1.5, p.z + p.d / 2 + 1.5, p);
   for (const q of posts) insert(W.pgrid, q.x - q.r - 2, q.x + q.r + 2, q.z - q.r - 2, q.z + q.r + 2, q);
@@ -72,6 +72,22 @@ export function wallAt(W, x, z, y, margin, step, height) {
   return null;
 }
 
+// How far a body at (x, z), kept `margin` away, is pushed into walls (0: clear). Like wallAt, but it measures, so
+// the controller can always let a body move *out* of something it's overlapping.
+export function wallPen(W, x, z, y, margin, step, height) {
+  let pen = 0;
+  for (const p of platsNear(W, x, z)) {
+    if (p.ghost || !contains(p, x, z, margin)) continue;
+    const hx = Math.max(p.x - p.w / 2, Math.min(p.x + p.w / 2, x)), hz = Math.max(p.z - p.d / 2, Math.min(p.z + p.d / 2, z));
+    if (!(heightAt(p, hx, hz) > y + step && p.bot < y + height)) continue;
+    const ox = Math.abs(x - p.x) - p.w / 2, oz = Math.abs(z - p.z) - p.d / 2;
+    const d = ox > 0 || oz > 0 ? Math.hypot(Math.max(ox, 0), Math.max(oz, 0)) : Math.max(ox, oz); // (negative inside)
+    pen = Math.max(pen, margin - d);
+  }
+  for (const q of postsNear(W, x, z)) if (q.y1 > y + step && q.y0 < y + height) pen = Math.max(pen, q.r + margin - Math.hypot(x - q.x, z - q.z));
+  return pen;
+}
+
 // Is the straight line a→b drivable for body profile H (used by the nav graph and the CPU's shortcuts)?
 // Walks it in small steps, carrying the ground height along like the controller does.
 export function walkable(W, H, ax, az, ay, bx, bz, by = null, opts = {}) {
@@ -88,4 +104,20 @@ export function walkable(W, H, ax, az, ay, bx, bz, by = null, opts = {}) {
     if (ceilingAt(W, x, z, y + 0.05) < y + H.HEIGHT) return false;
   }
   return by == null || Math.abs(y - by) < 0.6;
+}
+
+// Rails from the level, with lengths, directions and their neighbours end to end (so grinds chain).
+export function prepRails(list) {
+  const rails = list.map((r, i) => {
+    const dx = r.x1 - r.x0, dz = r.z1 - r.z0, len = Math.hypot(dx, dz);
+    return { ...r, i, len, ux: dx / len, uz: dz / len, next: null, prev: null };
+  });
+  const near = (ax, ay, az, bx, by, bz) => Math.hypot(ax - bx, az - bz) < 0.3 && Math.abs(ay - by) < 0.3;
+  for (const a of rails) for (const b of rails) {
+    if (a === b) continue;
+    if (near(a.x1, a.y1, a.z1, b.x0, b.y0, b.z0)) { a.next = { r: b, at: 0 }; b.prev = { r: a, at: 1 }; }
+    else if (near(a.x1, a.y1, a.z1, b.x1, b.y1, b.z1)) { a.next = { r: b, at: 1 }; b.next ??= { r: a, at: 1 }; }
+    else if (near(a.x0, a.y0, a.z0, b.x0, b.y0, b.z0)) { a.prev = { r: b, at: 0 }; }
+  }
+  return rails;
 }

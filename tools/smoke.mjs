@@ -33,7 +33,7 @@ async function run(name, ctxOpts, act) {
 
 const stage = (page) => page.evaluate(() => { const M = GAME.state.M, d = M.dashers[0], B = d.mode === 'car' ? d.car : d.cart; return { phase: M.phase, mode: d.mode, bag: Object.values(d.bag).reduce((a, b) => a + b, 0), earned: d.earned, orders: d.orders.length, x: +B.x.toFixed(1), y: +B.y.toFixed(1), z: +B.z.toFixed(1), t: +M.t.toFixed(1), why: M.why }; });
 // put player 1's cart somewhere (for the see-through shots) and let the camera settle
-const place = async (page, x, y, z, heading = Math.PI) => { await page.evaluate(([x, y, z, h]) => { const d = GAME.state.M.dashers[0]; Object.assign(d.cart, { x, y, z, heading: h, vh: h, speed: 0, kx: 0, kz: 0, grounded: true }); GAME.ff(0.05); }, [x, y, z, heading]); await page.waitForTimeout(700); };
+const place = async (page, x, y, z, heading = Math.PI) => { await page.evaluate(([x, y, z, h]) => { const d = GAME.state.M.dashers[0]; Object.assign(d.cart, { x, y, z, heading: h, vh: h, speed: 0, kx: 0, kz: 0, vy: 0, grounded: true, grind: null, railLeft: null }); GAME.ff(0.05); }, [x, y, z, heading]); await page.waitForTimeout(700); };
 
 await run('desktop', { viewport: { width: 1280, height: 800 } }, async (page) => {
   await page.click('[data-go]');
@@ -54,6 +54,28 @@ await run('desktop', { viewport: { width: 1280, height: 800 } }, async (page) =>
   await place(page, 29, 0.15, -18, Math.PI); await page.screenshot({ path: `${OUT}/see-garage.png` });
   await place(page, 4, 5.15, -27, Math.PI); await page.screenshot({ path: `${OUT}/see-upper.png` });
   await page.keyboard.press('KeyO'); await page.waitForTimeout(300); await page.screenshot({ path: `${OUT}/desktop-board-mid.png` }); await page.keyboard.press('KeyO');
+  // a grind: hop by the upper floor's edge rail, ride it in slow-mo (GAME.force drives P1 exactly)
+  await place(page, 3, 5.15, -19.3, Math.PI / 2);
+  await page.evaluate(() => { GAME.force = { dir: { x: 1, z: 0, mag: 1 }, jump: true }; });
+  await page.waitForFunction(() => !!GAME.state.M.dashers[0].cart.grind, null, { timeout: 4000 }).catch(() => console.log(' (no grind)'));
+  await page.keyboard.down('KeyX'); await page.waitForTimeout(400);
+  await page.screenshot({ path: `${OUT}/trick-grind.png` });
+  await page.keyboard.up('KeyX');
+  console.log(' grind', await page.evaluate(() => { const B = GAME.state.M.dashers[0].cart; return { grind: !!B.grind, y: B.y.toFixed(2), style: GAME.state.M.dashers[0].style.toFixed(2), scale: GAME.state.scale.toFixed(2) }; }));
+  // the upstairs kicker: run at it and hop at the lip
+  await page.evaluate(() => { GAME.force = { dir: null }; });
+  await place(page, -6, 5.15, -27, 0);
+  await page.evaluate(() => { GAME.force = { dir: { x: 0, z: 1, mag: 1 } }; });
+  const lip = await page.evaluate(() => { for (let i = 0; i < 400; i++) { const B = GAME.state.M.dashers[0].cart; if (B.plat?.ramp && B.z > -20.1) return true; GAME.ff(1 / 60); } return false; });
+  if (!lip) console.log(' (never reached the lip)');
+  await page.evaluate(() => { GAME.force = { dir: { x: 0, z: 1, mag: 1 }, jump: true }; GAME.ff(0.3); });
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: `${OUT}/trick-launch.png` });
+  console.log(' launch', await page.evaluate(() => { const B = GAME.state.M.dashers[0].cart; return { y: B.y.toFixed(2), z: B.z.toFixed(2), air: !B.grounded }; }));
+  await page.evaluate(() => GAME.ff(1.2));
+  await page.waitForTimeout(250);
+  await page.evaluate(() => { GAME.force = null; });
+  await page.screenshot({ path: `${OUT}/trick-landed.png` });
   await page.evaluate(() => { GAME.autoplay = true; });
   let s = await stage(page), shots = 0;
   for (let i = 0; i < 500 && s.phase !== 'over'; i++) {

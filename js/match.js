@@ -15,8 +15,8 @@
 //
 // Every body steps through js/drive.js; dashers differ only by where their controls come from (keys / pad /
 // touch for humans, js/ai.js for CPUs — a remote player would be one more control source).
-import { createBody, driveStep, bumpBodies, circles, turnTo } from './drive.js';
-import { HANDLING, MATCH, COMBAT, DT } from './tuning.js';
+import { createBody, driveStep, bumpBodies, circles, turnTo, penAt } from './drive.js';
+import { HANDLING, MATCH, COMBAT, SLOWMO, DT } from './tuning.js';
 import { makeOrders, PRODUCT } from './order.js';
 import { groundAt, wallAt } from './world.js';
 import { mulberry32, shuffle } from './utils.js';
@@ -48,7 +48,7 @@ export function createMatch(L, W, { seed = (Math.random() * 2 ** 31) >>> 0, huma
       cart: createBody(HANDLING.cart, s.x, s.y, s.z, s.heading),
       car: createBody(HANDLING.car, c.x, c.y, c.z, c.heading),
       earned: 0, delivered: 0, poached: 0, enterT: null, lastT: null,
-      stunT: 0, guardT: 0, rushT: 0, rushCD: 0, punchCD: 0, punchT: 0, hunting: -1,
+      stunT: 0, guardT: 0, rushT: 0, rushCD: 0, punchCD: 0, punchT: 0, hunting: -1, style: SLOWMO.START, tricks: 0,
     });
   }
   return { L, W, seed, O, board: O.board, dashers, props: [], loose: [], rng, phase: humans ? 'board' : 'ready', boardT: MATCH.BOARD_TIME, t: 0, readyT: MATCH.READY, winner: null, events: [], steps: 0 };
@@ -143,7 +143,10 @@ function dasherStep(M, d, ctl, ev) {
       ctl = { ...ctl, dir: { x: f.x, z: f.z, mag: 1 } };
     } else B.boost = 1;
   }
-  driveStep(W, B, ctl, DT, ev);
+  const evd = [];
+  driveStep(W, B, ctl, DT, evd);
+  for (const e of evd) { ev.push(e); trick(M, d, e, ev); }
+  if (B.grind) d.style = Math.min(SLOWMO.MAX, d.style + SLOWMO.GRIND * DT);
   if (d.mode === 'cart') {
     const fx = B.x + Math.sin(B.heading) * 0.5, fz = B.z + Math.cos(B.heading) * 0.5;
     const need = needs(M, d);
@@ -192,9 +195,17 @@ function dasherStep(M, d, ctl, ev) {
     // nothing left to deliver: park back at your spot and you're on foot again, with a fresh cart
     if (!readyOrders(M, d).length && Math.abs(B.y - d.spot.y) < 1 && Math.hypot(B.x - d.spot.x, B.z - d.spot.z) < MATCH.PARK_R && Math.abs(B.speed) < 5) {
       for (const o of held(M, d)) release(M, d, o.i);
+      // out of the driver's door (the left), or wherever round the car is clear: a wall, a parked car or a rival
       const s = Math.sin(B.heading), c = Math.cos(B.heading);
-      let x = B.x + c * 2.4, z = B.z - s * 2.4; // (out of the driver's door, on the left)
-      if (wallAt(W, x, z, B.y, 0.5, 0.35, 1.7)) { x = B.x - c * 2.4; z = B.z + s * 2.4; }
+      const spots = [[2.4, 0], [-2.4, 0], [3.2, 0], [-3.2, 0], [0, -3.6], [0, 3.6], [2.4, -2], [-2.4, -2], [2.4, 2], [-2.4, 2]];
+      const others = [...M.dashers.flatMap((o) => (o === d ? [] : [bodyOf(o), ...(o.mode === 'cart' ? [o.car] : [])])), ...M.props].flatMap((O) => circles(O));
+      let at = null;
+      for (const [l, f] of spots) {
+        const x = B.x + c * l + s * f, z = B.z - s * l + c * f, probe = fresh(B, x, z);
+        if (penAt(W, probe, x, z) > 0 || others.some(([ox, oz, r]) => Math.hypot(ox - x, oz - z) < r + 1)) continue;
+        at = [x, z]; break;
+      }
+      const [x, z] = at || [B.x + c * 2.4, B.z - s * 2.4];
       d.cart = { ...d.cart, ...fresh(B, x, z) };
       d.mode = 'cart'; B.speed = 0; B.parked = true;
       ev.push({ type: 'exit', d });
@@ -204,6 +215,18 @@ function dasherStep(M, d, ctl, ev) {
 function fresh(B, x, z) {
   const b = createBody(HANDLING.cart, x, B.y, z, B.heading);
   return { ...b, abandoned: undefined, boost: 1 };
+}
+
+// --- tricks: grinds, launches, big air, big drops. They fill the style meter (slow-mo) and pop a toast.
+function trick(M, d, e, ev) {
+  const add = (name, pts, sick = false) => { d.style = Math.min(SLOWMO.MAX, d.style + pts); d.tricks++; ev.push({ type: 'trick', d, name, sick }); };
+  if (e.type === 'grindStart') add('GRIND!', 0.05, (e.B.airT ?? 0) > 0.25);
+  else if (e.type === 'grindEnd' && e.time > 1.2) add(`${e.time.toFixed(1)}s GRIND`, 0.1);
+  else if (e.type === 'launch' && e.vy > 7.5) add('LAUNCH!', 0.1, true);
+  else if (e.type === 'land') {
+    if (e.drop > 3) add('SICK DROP!', SLOWMO.DROP);
+    else if (e.airT > 0.8) add('BIG AIR!', SLOWMO.AIR);
+  }
 }
 
 // --- combat
@@ -225,6 +248,7 @@ function punch(M, d, ev) {
     best.stunT = Math.max(best.stunT, COMBAT.STUN_STEAL); best.guardT = COMBAT.GUARD;
     d.guardT = Math.max(d.guardT, COMBAT.GUARD_THIEF); // (a getaway: no instant steal-back)
     shove(best.cart, A, 4);
+    d.style = Math.min(SLOWMO.MAX, d.style + SLOWMO.STEAL);
     ev.push({ type: 'steal', d, from: best, id: steal, item: PRODUCT[steal] });
   } else hit(M, best, d, 'punch', ev);
 }
@@ -248,7 +272,8 @@ export function hit(M, v, by, kind, ev = M.events) {
   }
   v.stunT = Math.max(v.stunT, { rush: COMBAT.STUN_RUSH, punch: COMBAT.STUN_PUNCH, car: COMBAT.STUN_CAR }[kind]);
   v.guardT = COMBAT.GUARD; v.rushT = 0;
-  if (by) shove(V, bodyOf(by), kind === 'car' ? 9 : 6.5);
+  if (by) { shove(V, bodyOf(by), kind === 'car' ? 9 : 6.5); by.style = Math.min(SLOWMO.MAX, by.style + SLOWMO.SMASH); }
+  V.grind = null;
   ev.push({ type: 'hit', d: v, by, kind, lost: lost.map((id) => PRODUCT[id]) });
   return true;
 }

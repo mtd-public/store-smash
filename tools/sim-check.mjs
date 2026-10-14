@@ -72,6 +72,28 @@ const run = (B, ctl, secs, each) => { const ev = []; for (let t = 0; t < secs; t
   ok(air > 0.25 && B.x > cx + 20, `car jumps the stunt-lot gap (air ${air.toFixed(2)} s, x ${(B.x - cx).toFixed(0)})`);
 }
 
+// ---------------------------------------------------------------- 1b. grinds and jumps
+{
+  // upstairs by the edge: hop, the rail's magnet pulls you on, you grind along it
+  const B = createBody(HANDLING.cart, -5, F2, -19.3, Math.PI / 2);
+  let grind = null, first = true;
+  const ev = run(B, () => ({ dir: { x: 1, z: 0, mag: 1 }, jump: first && !(first = false) }), 1.2, (b) => { if (b.grind && !grind) grind = { ...b.grind }; });
+  ok(!!grind && Math.abs(grind.r.z0 + 18.075) < 0.01 && ev.some((e) => e.type === 'grindStart'), `a hop by the upper floor's edge grabs the edge rail and grinds (${B.grind ? 'still grinding' : 'off'} at x ${B.x.toFixed(1)})`);
+  // ride the west landing rail and it carries you on down the travelator handrail to the ground floor
+  const C = createBody(HANDLING.cart, -27, F2 + 1.4, -13.925, Math.PI / 2);
+  C.grounded = false; C.vy = -1;
+  let maxRails = new Set(), landed = null;
+  run(C, { dir: null }, 4, (b) => { if (b.grind) maxRails.add(b.grind.r.i); if (!landed && b.grounded && !b.grind && b.y < 1) landed = b.y; });
+  ok(maxRails.size === 2 && landed != null, `a grind chains from the landing rail down the handrail to the ground floor (${maxRails.size} rails, landed at y ${landed?.toFixed(2)})`);
+  // the kicker upstairs: run at it, hop at the lip, fly over the edge rail and drop into the front hall
+  const K = createBody(HANDLING.cart, -6, F2, -27, 0);
+  let lands = [], hopped = false;
+  const kev = run(K, (t) => { const lip = !hopped && K.plat?.ramp && K.z > -19.9; if (lip) hopped = true; return { dir: { x: 0, z: 1, mag: 1 }, jump: lip }; }, 3.5, () => {});
+  for (const e of kev) if (e.type === 'land') lands.push(e);
+  const big = lands.find((e) => e.drop > 3);
+  ok(hopped && kev.some((e) => e.type === 'launch') && big && K.y < 1 && K.z > -14, `a hop off the upstairs kicker clears the edge rail into the front hall (drop ${big?.drop.toFixed(1)} m, z ${K.z.toFixed(1)})`);
+}
+
 // ---------------------------------------------------------------- 2. reachability
 {
   const start = L.starts[0];
