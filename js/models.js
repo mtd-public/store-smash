@@ -245,12 +245,6 @@ export function makeCar(color) {
 }
 
 // ---------------------------------------------------------------- props
-export function treeGeos() {
-  return {
-    trunk: merge([part(CYL6, 0x8a6a44, [0, 0.5, 0], [0, 0, 0], [0.32, 1, 0.32])]),
-    crown: merge([part(SPH0, 0x4caf50, [0, 0, 0], [0, 0, 0], [1, 0.85, 1]), part(SPH0, 0x5fc25a, [0.25, 0.2, 0.1], [0, 0.5, 0], [0.7, 0.6, 0.7])]),
-  };
-}
 export function lampGeo() { return merge([part(CYL6, 0x5a6270, [0, 3.5, 0], [0, 0, 0], [0.18, 7, 0.18]), part(BOX, 0x5a6270, [0.6, 7, 0], [0, 0, 0], [1.4, 0.12, 0.2]), part(BOX, 0xfff3c4, [1.1, 6.9, 0], [0, 0, 0], [0.5, 0.08, 0.3])]); }
 export function registerGeo() { return merge([part(BOX, 0x2b2b30, [0, 0.15, 0], [0, 0, 0], [0.5, 0.3, 0.4]), part(BOX, 0x47c4ff, [0, 0.42, -0.05], [-0.4, 0, 0], [0.4, 0.28, 0.04])]); }
 export function corralGeo(w, d) {
@@ -258,17 +252,6 @@ export function corralGeo(w, d) {
   for (const [x0, x1, z0, z1] of [[-w / 2, w / 2, -d / 2, -d / 2], [-w / 2, w / 2, d / 2, d / 2], [-w / 2, -w / 2, -d / 2, d / 2]]) out.push(part(BOX, c, [(x0 + x1) / 2, 1.05, (z0 + z1) / 2], [0, 0, 0], [Math.max(0.08, x1 - x0), 0.08, Math.max(0.08, z1 - z0)]));
   for (const [x, z] of [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]]) out.push(part(CYL6, c, [x, 0.55, z], [0, 0, 0], [0.08, 1.1, 0.08]));
   return merge(out);
-}
-export function roofGeo(w, d, h, color) {
-  // a pitched roof: ridge along the longer side
-  const g = new THREE.BufferGeometry(), X = w / 2, Z = d / 2;
-  const along = w >= d;
-  const v = along
-    ? [-X, 0, -Z, X, 0, -Z, X, h, 0, -X, 0, -Z, X, h, 0, -X, h, 0, -X, 0, Z, -X, h, 0, X, h, 0, -X, 0, Z, X, h, 0, X, 0, Z, -X, 0, -Z, -X, h, 0, -X, 0, Z, X, 0, -Z, X, 0, Z, X, h, 0]
-    : [-X, 0, -Z, -X, 0, Z, 0, h, Z, -X, 0, -Z, 0, h, Z, 0, h, -Z, X, 0, -Z, 0, h, -Z, 0, h, Z, X, 0, -Z, 0, h, Z, X, 0, Z, -X, 0, -Z, 0, h, -Z, X, 0, -Z, -X, 0, Z, X, 0, Z, 0, h, Z];
-  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-  g.computeVertexNormals();
-  return part(g, color);
 }
 export function fountainGeo() { return merge([part(CYL, 0xd8d0c0, [0, 0.3, 0], [0, 0, 0], [3.2, 0.6, 3.2]), part(CYL, 0x5fb8e8, [0, 0.58, 0], [0, 0, 0], [2.8, 0.06, 2.8]), part(CYL6, 0xd8d0c0, [0, 1.2, 0], [0, 0, 0], [0.4, 1.6, 0.4]), part(SPH0, 0xbfe6ff, [0, 2.1, 0], [0, 0, 0], [0.8, 0.5, 0.8])]); }
 export function doorGeo(wide) { return merge([part(BOX, 0x5a3a24, [0, 1.1, 0], [0, 0, 0], [wide ? 3 : 1.1, 2.2, 0.08]), part(BOX, 0xffe9a8, [0, 2.45, 0.05], [0, 0, 0], [wide ? 3.2 : 1.3, 0.2, 0.12])]); }

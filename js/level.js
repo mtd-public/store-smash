@@ -90,7 +90,7 @@ function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel,
   floor(-28, 16, -2, 4, G, 'sidewalk', 0xd9d4cc);                // front plaza
   floor(16, 20, -40, 4, G, 'sidewalk', 0xd9d4cc);                // walkway to the garage
   floor(20, 40, -40, 4, G, 'concrete', 0xb8b8bc, { tag: 'garageGround' }); // garage level 1 (indoor)
-  floor(-40, 40, 4, 40, G, 'lot', 0x55565c);                     // outdoor parking lot
+  floor(-40, 40, 4, 40, G, 'lot', 0x8c8e98);                     // outdoor parking lot
   L.zones.store = { x0: -28, x1: 16, z0: -40, z1: -2, y0: -1, y1: WALL_TOP };
   L.zones.garage = { x0: 20, x1: 40, z0: -40, z1: 4, y0: -1, y1: F2 - 0.2 };
 
@@ -272,6 +272,7 @@ function buildStoreBlock(L, { box, floor, ramp, post, decor, sign, wall, lintel,
 
 // ---------------------------------------------------------------- the city
 function buildCity(L, { box, floor, ramp, post, decor, sign, rng }) {
+  dress = mulberry32(777);
   // Outer border: grass verge and a hedge wall so nobody drives off the map.
   const B = EDGE, V = EDGE + 14;
   floor(-V, V, -V, -B, G, 'grass', 0x7ccf6a); floor(-V, V, B, V, G, 'grass', 0x7ccf6a);
@@ -286,10 +287,40 @@ function buildCity(L, { box, floor, ramp, post, decor, sign, rng }) {
     floor(cx - H, cx + H, cz - H, cz - H + S, G, 'sidewalk', 0xd9d4cc); floor(cx - H, cx + H, cz + H - S, cz + H, G, 'sidewalk', 0xd9d4cc);
     floor(cx - H, cx - H + S, cz - H + S, cz + H - S, G, 'sidewalk', 0xd9d4cc); floor(cx + H - S, cx + H, cz - H + S, cz + H - S, G, 'sidewalk', 0xd9d4cc);
     const I = H - S;
-    const ctx = { L, box, floor, ramp, post, decor, sign, rng, cx, cz, I, i, j };
+    const ctx = { L, box, floor, ramp, post, decor, sign, rng, cx, cz, I, i, j, dr: dress };
     ({ houses, apts, towers, park, stunt })[type](ctx);
+    sidewalkFurniture(ctx, type);
+  }
+  // the streets: white edge lines along the curbs, stop bars at the crosswalks, manhole covers
+  decor({ type: 'streets' });
+  for (let k = 0; k < 60; k++) {
+    const r = (Math.floor(dress() * (2 * CITY + 2)) - CITY - 1) * PITCH + PITCH / 2, t = (dress() - 0.5) * 2 * (EDGE - 10);
+    if (Math.abs(((t % PITCH) + PITCH) % PITCH - PITCH / 2) < 12) continue; // (not in an intersection)
+    const ew = dress() < 0.5, off = (dress() < 0.5 ? -1 : 1) * 3.2;
+    decor({ type: 'manhole', x: ew ? t : r + off, y: 0, z: ew ? r + off : t });
   }
 }
+
+// City dressing that only draws (its own random stream, so the collision layout never changes with it); the
+// lamps and traffic lights stand on posts at the building side of the sidewalk, out of the traffic.
+let dress = mulberry32(777);
+function sidewalkFurniture({ post, decor, cx, cz }, type) {
+  const E = HALF - 2.6, C = HALF - 1.4; // lamp line (building side of the sidewalk), corner pole
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { // a traffic light on every corner, facing the crossing
+    const x = cx + sx * C, z = cz + sz * C;
+    post(x, z, 0.18, 0, 5, 'signal');
+    decor({ type: 'signal', x, y: G, z, rot: Math.atan2(sx, sz) });
+  }
+  for (const [ax, az, rot] of [[1, 0, 0], [1, 0, Math.PI], [0, 1, Math.PI / 2], [0, 1, -Math.PI / 2]]) { // the four sidewalks
+    const side = rot === 0 ? 1 : rot === Math.PI ? -1 : rot > 0 ? 1 : -1; // which edge of the block this sidewalk runs along
+    for (const t of [-24, -8, 8, 24]) {
+      const x = ax ? cx + t : cx + side * E, z = ax ? cz + side * E : cz + t;
+      if (Math.abs(t) === 24) { post(x, z, 0.16, 0, 6, 'lamp'); decor({ type: 'streetlamp', x, y: G, z, rot: ax ? (side > 0 ? 0 : Math.PI) : (side > 0 ? Math.PI / 2 : -Math.PI / 2) }); }
+      else if (dress() < 0.55) decor({ type: pick(['bench', 'bin', 'hydrant', 'planter', 'bench', 'planter']), x, y: G, z, rot: ax ? (side > 0 ? 0 : Math.PI) : (side > 0 ? Math.PI / 2 : -Math.PI / 2) });
+    }
+  }
+}
+const pick = (a) => a[Math.floor(dress() * a.length)];
 
 const streetName = (dir, v) => (dir === 'ew' ? EW[v] : NS[v]);
 const houseNo = (v, odd) => 100 + Math.round((v + 260) / 4) * 2 + (odd ? 1 : 0); // (odd numbers on the south side of a street, like real ones)
@@ -308,7 +339,14 @@ function houses({ L, box, floor, post, decor, rng, cx, cz, I }) {
     const hx = cx + k * 16, front = side === 's' ? cz + I : cz - I, hz = side === 's' ? front - 11.5 : front + 11.5;
     const color = PASTEL[Math.floor(rng() * PASTEL.length)], ht = 3.6 + Math.floor(rng() * 2) * 2.4;
     box(hx - 5, hx + 5, hz - 4.5, hz + 4.5, G + ht, ht, 'house', color);
-    decor({ type: 'roof', x: hx, z: hz, y: G + ht, w: 10.6, d: 9.6, h: 2.6, color: [0xb5533c, 0x6b6f7a, 0x3e5f8a, 0x8a4f6e][Math.floor(rng() * 4)] });
+    decor({ type: 'roof', x: hx, z: hz, y: G + ht, w: 10.6, d: 9.6, h: 2.6, color: [0xb5533c, 0x6b6f7a, 0x3e5f8a, 0x8a4f6e][Math.floor(rng() * 4)], chimney: dress() < 0.7 ? (dress() < 0.5 ? -1 : 1) : 0 });
+    const fz = side === 's' ? 1 : -1, wallZ = hz + fz * 4.5;
+    decor({ type: 'flowerbox', x: hx - 2.8, y: G, z: wallZ + fz * 0.35, rot: side === 's' ? 0 : Math.PI, color: pick([0xff8fb1, 0xffd23f, 0xff6b5a, 0xb48cf2]) });
+    decor({ type: 'flowerbox', x: hx + 2.8, y: G, z: wallZ + fz * 0.35, rot: side === 's' ? 0 : Math.PI, color: pick([0xff8fb1, 0xffd23f, 0xff6b5a, 0xb48cf2]) });
+    for (const bx of [-4.6, 4.6]) decor({ type: 'bush', x: hx + bx, y: G, z: wallZ + fz * 0.9, r: 0.8 + dress() * 0.3 });
+    decor({ type: 'mailbox', x: hx + 1.5, y: G, z: front - fz * 0.5, rot: side === 's' ? 0 : Math.PI, color: pick([0x3a8fe8, 0xe8423b, 0x2b2b30, 0x3fae7a]) });
+    decor({ type: 'picket', x0: hx - 7.8, x1: hx - 1, z: front - fz * 0.25, y: G }); decor({ type: 'picket', x0: hx + 1, x1: hx + 7.8, z: front - fz * 0.25, y: G });
+    if (dress() < 0.35) decor({ type: 'gnome', x: hx + (dress() < 0.5 ? -3.5 : 3.5), y: G, z: wallZ + fz * 3, rot: side === 's' ? 0 : Math.PI });
     decor({ type: 'path', x: hx, z: (front + hz) / 2 + (side === 's' ? 2.2 : -2.2), w: 1.6, d: Math.abs(front - hz) - 4.5 });
     decor({ type: 'door', x: hx, y: G, z: hz + (side === 's' ? 4.52 : -4.52), rot: side === 's' ? 0 : Math.PI });
     address(L, hx, front + (side === 's' ? 1.6 : -1.6), G, side, cx, cz, 'house');
@@ -322,6 +360,11 @@ function apts({ L, box, floor, post, decor, sign, rng, cx, cz, I }) {
     const color = PASTEL[Math.floor(rng() * PASTEL.length)], ht = 12 + Math.floor(rng() * 3) * 3;
     box(cx - 20, cx + 20, hz - 9, hz + 9, G + ht, ht, 'apartment', color);
     decor({ type: 'door', x: cx, y: G, z: hz + (side === 's' ? 9.02 : -9.02), rot: side === 's' ? 0 : Math.PI, wide: true });
+    const fz = side === 's' ? 1 : -1;
+    decor({ type: 'awning', x: cx, y: G + 3.1, z: hz + fz * 9.02, w: 5, rot: side === 's' ? 0 : Math.PI, color: pick([0xe8423b, 0x3fae7a, 0x3a8fe8, 0xf2a65a]) });
+    decor({ type: 'balconies', x: cx, z: hz + fz * 9, w: 40, y0: G, ht, rot: side === 's' ? 0 : Math.PI, color });
+    decor({ type: 'rooftop', x: cx, y: G + ht, z: hz, w: 40, d: 18, kind: 'apts' });
+    for (const px of [-8, 8]) decor({ type: 'planter', x: cx + px, y: G, z: hz + fz * 11, rot: 0 });
     address(L, cx, front + (side === 's' ? 1.6 : -1.6), G, side, cx, cz, 'apartment');
     for (const tx of [cx - 30, cx + 30]) { post(tx, hz, 0.35, 0, 6, 'trunk'); decor({ type: 'tree', x: tx, y: G, z: hz, h: 6, r: 2.4 }); }
   }
@@ -333,25 +376,38 @@ function towers({ L, box, floor, decor, rng, cx, cz, I }) {
     box(x - 13, x + 13, z - 13, z + 13, G + ht, ht, 'tower', [0x8fb3d9, 0x9fc8c0, 0xc0b4d8, 0xa9b8c8][Math.floor(rng() * 4)]);
     const side = sz > 0 ? 's' : 'n', front = sz > 0 ? cz + I : cz - I;
     decor({ type: 'door', x, y: G, z: z + sz * 13.02, rot: sz > 0 ? 0 : Math.PI, wide: true });
+    decor({ type: 'awning', x, y: G + 4.6, z: z + sz * 13.27, w: 7, rot: sz > 0 ? 0 : Math.PI, color: 0x2b3a55 });
+    decor({ type: 'rooftop', x, y: G + ht, z, w: 26, d: 26, kind: dress() < 0.4 ? 'heli' : 'tower' });
+    decor({ type: 'bands', x, z, w: 26, d: 26, ht });
     address(L, x, front + (sz > 0 ? 1.6 : -1.6), G, side, cx, cz, 'office');
   }
 }
 function park({ box, floor, post, decor, rng, cx, cz, I }) {
   floor(cx - I, cx + I, cz - I, cz + I, G, 'grass', 0x7fd06a);
-  box(cx - 14, cx + 14, cz - 9, cz + 9, G + 0.03, 0.2, 'water', 0x5fb8e8, { floor: true, slow: 0.4 }); // a pond: drivable, but it holds you back
+  box(cx - 14, cx + 14, cz - 9, cz + 9, G + 0.03, 0.2, 'water', 0x5fb8e8, { floor: true, slow: 0.4, hidden: true }); // a pond: drivable, but it holds you back (drawn rounded: js/scene.js)
+  decor({ type: 'pond', x: cx, y: G + 0.03, z: cz, w: 28, d: 18, r: 6 });
+  decor({ type: 'parkPaths', x: cx, y: G, z: cz, I });
+  for (const [fx, fz] of [[-25, -20], [25, -20], [-25, 20], [25, 20]]) decor({ type: 'flowerbed', x: cx + fx, y: G, z: cz + fz, r: 2.2, color: pick([0xff8fb1, 0xffd23f, 0xff6b5a, 0xb48cf2, 0xffffff]) });
+  for (const [bx, bz, rot] of [[-9, -14.2, 0], [9, -14.2, 0], [-9, 14.2, Math.PI], [9, 14.2, Math.PI], [-19.6, 6, Math.PI / 2], [19.6, -6, -Math.PI / 2]]) decor({ type: 'bench', x: cx + bx, y: G, z: cz + bz, rot });
+  for (const [lx, lz] of [[-21, -14], [21, 14], [-21, 14], [21, -14]]) { post(cx + lx, cz + lz, 0.16, 0, 6, 'lamp'); decor({ type: 'streetlamp', x: cx + lx, y: G, z: cz + lz, rot: Math.atan2(-lx, -lz) + Math.PI / 2 }); }
+  post(cx + 31, cz - 28, 1.5, 0, 2.6, 'playground'); decor({ type: 'playground', x: cx + 31, y: G, z: cz - 28 });
+  for (const [px, pz] of [[-30, 28], [-24, 31]]) decor({ type: 'picnic', x: cx + px, y: G, z: cz + pz, rot: dress() * 3 });
   for (let k = 0; k < 16; k++) {
     const a = rng() * Math.PI * 2, r = 18 + rng() * 18, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
     post(x, z, 0.4, 0, 6, 'trunk'); decor({ type: 'tree', x, y: G, z, h: 5 + rng() * 3, r: 2.2 + rng() * 1.2 });
   }
   post(cx, cz, 1.6, 0, 2.5, 'fountain'); decor({ type: 'fountain', x: cx, y: G + 0.03, z: cz });
 }
-function stunt({ ramp, floor, sign, cx, cz, I }) {
-  floor(cx - I, cx + I, cz - I, cz + I, G, 'lot', 0x55565c);
+function stunt({ ramp, floor, sign, decor, cx, cz, I }) {
+  floor(cx - I, cx + I, cz - I, cz + I, G, 'lot', 0x8c8e98);
   // a kicker, a 7 m gap and a landing ramp across the middle: flat out, a car clears it (js/drive.js carries a
   // ramp's climb into the air); too slow and you drop into the gap and drive out the side
   ramp(cx - 34, cx - 10, cz - 6, cz + 6, 'x', G, G + 4, 'stunt', 0xf2c14e);
   ramp(cx - 3, cx + 23, cz - 6, cz + 6, 'x', G + 3.4, G, 'stunt', 0xf2c14e);
   sign('STUNT LOT', cx - 20, 4.6, cz - 6.2, 0, 7, 1.2, '#f2c14e', '#2b2b30');
+  for (let x = -34; x <= 23; x += 3) for (const z of [-7.2, 7.2]) if (x < -10 || x > -3) decor({ type: 'cone', x: cx + x, y: G, z: cz + z });
+  for (const [fx, fz] of [[-36, -8], [-36, 8], [25, -8], [25, 8]]) decor({ type: 'flag', x: cx + fx, y: G, z: cz + fz });
+  for (let k = 0; k < 8; k++) decor({ type: 'tyres', x: cx + (dress() - 0.5) * 70, y: G, z: cz + (dress() < 0.5 ? -1 : 1) * (18 + dress() * 18) });
 }
 
 // (a plat with an explicit bottom, for the sloped balustrades)

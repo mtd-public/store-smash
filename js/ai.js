@@ -141,9 +141,12 @@ export function think(M, d, brain, nav, dt) {
   if (brain.progT > 2.5) {
     brain.progT = 0;
     const dNow = Math.hypot(T.x - B.x, T.z - B.z) + Math.abs(T.y - B.y) * 3;
-    if (brain.progD != null && dNow > brain.progD - 1 && T.kind !== 'rival' && !(T.kind === 'park' && dNow < MATCH.PARK_R)) brain.noProg = (brain.noProg || 0) + 1;
+    // (on foot near the goal, measure against the closest you've got: rocking back and forth beside a curb
+    // island gets 1 m closer every other sample without ever getting there)
+    const near = !car && dNow < 10, ref = near ? Math.min(brain.progD ?? Infinity, brain.bestD ?? Infinity) : brain.progD;
+    if (ref != null && dNow > ref - 1 && T.kind !== 'rival' && !(T.kind === 'park' && dNow < MATCH.PARK_R)) brain.noProg = (brain.noProg || 0) + 1;
     else brain.noProg = 0;
-    brain.progD = dNow;
+    brain.progD = dNow; brain.bestD = near ? Math.min(brain.noProg ? brain.bestD ?? Infinity : Infinity, dNow) : null;
     if (brain.noProg >= 3) { brain.wiggle = Math.max(brain.wiggle + 1, 2 + (brain.noProg - 3) * 3); brain.unstickT = car ? 1.1 : 0.7; brain.escape = escapeDir(M, d, B, T, brain.rng); brain.path = null; }
   }
   // stuck? (on a pillar, wedged against a parked car) — back off at an angle and hop, then replan
@@ -164,6 +167,18 @@ export function think(M, d, brain, nav, dt) {
       return { dir: null };
     }
   }
+  // the last resort, for a pocket the checks above can't see (boxed in by parked bodies, rocking back and forth
+  // a metre either way): ten seconds within 3 m of one spot with somewhere to be, and the CPU is towed a few metres
+  // down its route, past whatever's boxing it in
+  const A = brain.anchor;
+  if (!A || Math.hypot(B.x - A.x, B.z - A.z) > 3 || d.stunT > 0 || !(d.orders.length || car)) brain.anchor = { x: B.x, z: B.z, t: M.t };
+  else if (M.t - A.t > 10 && !(T.kind === 'park' && Math.hypot(T.x - B.x, T.z - B.z) < MATCH.PARK_R)) {
+    const P = findPath(N, B, T);
+    const n = P?.find((q) => Math.hypot(q.x - B.x, q.z - B.z) > (car ? 10 : 6)) || P?.[P.length - 1];
+    if (n) { const nx = P[P.indexOf(n) + 1] || T; Object.assign(B, { x: n.x, y: n.y, z: n.z, heading: Math.atan2(nx.x - n.x, nx.z - n.z), vh: Math.atan2(nx.x - n.x, nx.z - n.z), speed: 0, kx: 0, kz: 0, vy: 0, grounded: true, grind: null }); M.events.push({ type: 'towed', d }); }
+    brain.anchor = null; brain.wiggle = 0; brain.noProg = 0; brain.progD = null; brain.path = null; brain.unstickT = 0;
+    return { dir: null };
+  }
   if (brain.unstickT > 0) {
     brain.unstickT -= dt;
     if (brain.escape) { // open floor behind you: back out toward it (a three-point turn); ahead: drive at it
@@ -172,6 +187,13 @@ export function think(M, d, brain, nav, dt) {
       return { dir: { ...brain.escape, mag: 1 }, jump: false };
     }
     return { turn: brain.unstickDir, throttle: -1, jump: brain.wiggle > 3 && brain.unstickT < 0.1 };
+  }
+  // still getting nowhere a few metres from the goal on foot (boxed in by a curb island, an abandoned cart, your
+  // own car parked crooked): go straight at it and hop whatever's low in the way
+  if (!car && (brain.noProg || 0) >= 3 && T.kind !== 'rival' && Math.hypot(T.x - B.x, T.z - B.z) < 8) {
+    const ex = T.x - B.x, ez = T.z - B.z, el = Math.hypot(ex, ez) || 1;
+    brain.hopT = (brain.hopT || 0) + dt;
+    return { dir: { x: ex / el, z: ez / el, mag: 1 }, jump: brain.hopT % 0.9 < dt * 1.5 };
   }
   // follow: drop waypoints we've reached, aim a little way down the path
   const P = brain.path, reach = car ? 4.5 : 1.3;

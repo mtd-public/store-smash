@@ -379,7 +379,7 @@ function bakeMap() {
   g.fillStyle = '#5c5d64'; g.fillRect(0, 0, N, N);
   const col = { sidewalk: '#cfc9bf', grass: '#86d46f', lot: '#6a6b72', storeFloor: '#f6e7c8', pavers: '#b9e3a0', plaza: '#d9d0c0', concrete: '#a9a9ae', deck: '#a9a9ae', water: '#5fb8e8', stunt: '#f2c14e' };
   const solid = { house: '#e2c6a8', apartment: '#e2c6a8', tower: '#8fa3bd', hedge: '#3e8f4a', roof: '#e8423b' };
-  const sorted = L.plats.filter((p) => !p.hidden && p.tag !== 'mezz' && p.tag !== 'storeUpper').sort((a, b) => a.top - b.top);
+  const sorted = L.plats.filter((p) => (!p.hidden || p.mat === 'water') && p.tag !== 'mezz' && p.tag !== 'storeUpper').sort((a, b) => a.top - b.top);
   for (const p of sorted) {
     const c2 = p.floor ? col[p.mat] : solid[p.mat];
     if (!c2) continue;

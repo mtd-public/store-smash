@@ -91,6 +91,25 @@ hair under a delivery cap, mitten hands and chunky sneakers. Each cart flies a p
 Cars are bubbly hatchbacks with rounded bodies, a glass band all round and a DASH sign on the roof. The
 department icons are drawn on canvases in `js/icons.js`, with no image files.
 
+### The city
+
+The streets have white edge lines, stop bars at every crosswalk and manhole covers. Each corner has a traffic
+light, and street lamps, benches, bins, hydrants and planters line the sidewalks. Lawns are mown in stripes.
+
+- **Houses:** pitched, overhanging roofs with ridge caps and chimneys, clapboard siding with shuttered windows,
+  picket fences, mailboxes, flower boxes, bushes and the odd garden gnome.
+- **Apartments:** brick, with balconies (some with potted plants), entrance awnings, and rooftop water tanks,
+  AC units and stair huts.
+- **Office towers:** sky-blue curtain walls with floor bands, a glass lobby, and rooftop plant rooms, antennas
+  or helipads.
+- **Parks:** a rounded pond with a stone rim, lily pads, reeds and a family of ducks, plus a path loop with
+  paths out to the sidewalks, flower beds, benches, lamps, a playground and picnic tables.
+- **Stunt lot:** cones, chequered flags and tyre stacks.
+
+Everything that only draws comes from `js/props.js`, using its own random stream so the collision layout stays
+the same. The lamps, traffic lights and playground stand on thin posts at the building side of the sidewalk,
+out of the traffic.
+
 ## Faces
 
 Shoppers have chibi heads wearing **Dr. Mow's cartoon faces** (`js/faces.js`, the farmer's set copied as is):
@@ -109,10 +128,11 @@ closing in. Your current face shows in the HUD portrait.
 | `js/order.js` | products, the shuffled layout, shelf stock, the order board |
 | `js/match.js` | the rules: board, shopping, combat, spills, tricks, car, delivery, poaching, parking, standings |
 | `js/nav.js` | nav graphs sampled straight off the collision world (one per body), A*, Dijkstra |
-| `js/ai.js` | CPU dashers: order picks, routing, combat, avoidance, escapes, a last-resort tow |
+| `js/ai.js` | CPU dashers: order picks, routing, combat, avoidance, escapes. Stuck on foot near a goal, a CPU drives straight at it and hops. Ten seconds boxed in anywhere, it gets towed a few metres down its route |
 | `js/scene.js` | renderer: merged level meshes, signs, see-through, cutaways, x-ray, dashers, faces, guides, split screen |
 | `js/models.js`, `js/faces.js` | procedural shopper / cart / car / products, toon material, ink outlines; Dr. Mow's faces |
 | `js/icons.js` | the kawaii department icons and badges (floor decals, signs, directory, HUD, board) |
+| `js/props.js` | city props: street furniture, house yards, roofs, balconies, rooftop kit, park, stunt lot, trees |
 | `js/input.js` | touch stick, keys, pads, two local players |
 | `js/main.js` | shell: title (live CPU match behind it), board, HUD, minimap, banner, slow-mo, toasts, results |
 | `js/seethru.js`, `js/sfx-synth.js`, `js/utils.js` | Dr. Mow's kits |
